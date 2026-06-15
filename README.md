@@ -8,7 +8,7 @@
 ![PHP](https://img.shields.io/badge/PHP-%E2%89%A57.4-777bb4)
 ![License](https://img.shields.io/badge/license-GPL--2.0%2B-green)
 
-![项目预览](screenshot.png)
+![项目预览](docs/screenshot.png)
 
 ---
 
