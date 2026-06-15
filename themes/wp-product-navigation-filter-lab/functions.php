@@ -9,7 +9,8 @@
  * 4. 产品价格、功率、型号自定义字段
  * 5. 配置驱动的动态产品属性与 AJAX 无刷新筛选
  * 6. 分类专属筛选、继承、历史记录与分页状态同步
- * 7. 演示数据导入器
+ * 7. 产品分类内容、Canonical、Robots 与结构化数据
+ * 8. 演示数据导入器
  */
 
 if (! defined('ABSPATH')) {
@@ -1496,6 +1497,28 @@ function pfl_get_product_breadcrumb_items(): array
         ],
     ];
 
+    if (is_singular('product')) {
+        $primary_term = pfl_get_product_primary_category(get_queried_object_id());
+
+        if ($primary_term) {
+            foreach (pfl_get_product_category_path_for_term($primary_term) as $term) {
+                $term_url = get_term_link($term);
+
+                $items[] = [
+                    'label' => $term->name,
+                    'url'   => is_wp_error($term_url) ? '' : $term_url,
+                ];
+            }
+        }
+
+        $items[] = [
+            'label' => get_the_title(get_queried_object_id()),
+            'url'   => '',
+        ];
+
+        return $items;
+    }
+
     $path = pfl_get_current_product_category_path();
     $last_index = count($path) - 1;
 
@@ -1971,6 +1994,1108 @@ function pfl_product_admin_column_styles(): void
 add_action('admin_head-edit.php', 'pfl_product_admin_column_styles');
 
 
+
+/**
+ * 十四、产品分类内容与内置 SEO。
+ *
+ * 本模块用于学习分类图片、分类上下文内容、Canonical、Robots、
+ * BreadcrumbList、CollectionPage 与 Product JSON-LD 的实现方式。
+ */
+function pfl_register_product_category_content_meta(): void
+{
+    $fields = [
+        'pfl_category_image_id' => [
+            'type' => 'integer',
+            'sanitize_callback' => 'absint',
+        ],
+        'pfl_category_top_content' => [
+            'type' => 'string',
+            'sanitize_callback' => 'wp_kses_post',
+        ],
+        'pfl_category_bottom_content' => [
+            'type' => 'string',
+            'sanitize_callback' => 'wp_kses_post',
+        ],
+        'pfl_category_seo_title' => [
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+        ],
+        'pfl_category_meta_description' => [
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_textarea_field',
+        ],
+    ];
+
+    foreach ($fields as $meta_key => $field) {
+        register_term_meta(
+            'product_category',
+            $meta_key,
+            [
+                'type'              => $field['type'],
+                'single'            => true,
+                'show_in_rest'      => true,
+                'sanitize_callback' => $field['sanitize_callback'],
+                'auth_callback'     => static function (): bool {
+                    return current_user_can('manage_categories');
+                },
+            ]
+        );
+    }
+}
+add_action('init', 'pfl_register_product_category_content_meta', 12);
+
+
+function pfl_get_product_category_content(?WP_Term $term = null): array
+{
+    if (! $term) {
+        $term = pfl_get_current_product_category();
+    }
+
+    if (! $term) {
+        return [
+            'image_id'        => 0,
+            'top_content'     => '',
+            'bottom_content'  => '',
+            'seo_title'       => '',
+            'meta_description'=> '',
+        ];
+    }
+
+    return [
+        'image_id' => (int) get_term_meta(
+            $term->term_id,
+            'pfl_category_image_id',
+            true
+        ),
+        'top_content' => (string) get_term_meta(
+            $term->term_id,
+            'pfl_category_top_content',
+            true
+        ),
+        'bottom_content' => (string) get_term_meta(
+            $term->term_id,
+            'pfl_category_bottom_content',
+            true
+        ),
+        'seo_title' => (string) get_term_meta(
+            $term->term_id,
+            'pfl_category_seo_title',
+            true
+        ),
+        'meta_description' => (string) get_term_meta(
+            $term->term_id,
+            'pfl_category_meta_description',
+            true
+        ),
+    ];
+}
+
+
+function pfl_render_category_image_control(int $image_id = 0): void
+{
+    $image_url = $image_id > 0
+        ? wp_get_attachment_image_url($image_id, 'medium')
+        : '';
+    ?>
+    <div class="pfl-category-image-control">
+        <input
+            class="pfl-category-image-id"
+            name="pfl_category_image_id"
+            type="hidden"
+            value="<?php echo esc_attr((string) $image_id); ?>"
+        >
+
+        <div class="pfl-category-image-preview<?php echo $image_url ? ' has-image' : ''; ?>">
+            <?php if ($image_url) : ?>
+                <img src="<?php echo esc_url($image_url); ?>" alt="">
+            <?php else : ?>
+                <span>尚未选择分类图片</span>
+            <?php endif; ?>
+        </div>
+
+        <p>
+            <button class="button pfl-category-image-select" type="button">
+                选择分类图片
+            </button>
+            <button
+                class="button-link-delete pfl-category-image-remove"
+                type="button"
+                <?php echo $image_url ? '' : 'hidden'; ?>
+            >
+                移除图片
+            </button>
+        </p>
+    </div>
+    <?php
+}
+
+
+function pfl_product_category_add_content_fields(): void
+{
+    wp_nonce_field('pfl_save_category_content', 'pfl_category_content_nonce');
+    ?>
+    <div class="form-field pfl-category-content-field">
+        <label>分类图片</label>
+        <?php pfl_render_category_image_control(); ?>
+        <p class="description">用于分类页头部视觉区域和 CollectionPage 结构化数据。</p>
+    </div>
+
+    <div class="form-field pfl-category-content-field">
+        <label for="pfl-category-top-content">分类顶部内容</label>
+        <textarea id="pfl-category-top-content" name="pfl_category_top_content" rows="5"></textarea>
+        <p class="description">显示在分类标题下方，支持安全 HTML。</p>
+    </div>
+
+    <div class="form-field pfl-category-content-field">
+        <label for="pfl-category-bottom-content">分类底部内容</label>
+        <textarea id="pfl-category-bottom-content" name="pfl_category_bottom_content" rows="7"></textarea>
+        <p class="description">显示在产品结果之后，适合补充分类说明、应用范围和选型建议。</p>
+    </div>
+
+    <div class="form-field pfl-category-content-field">
+        <label for="pfl-category-seo-title">SEO 标题</label>
+        <input id="pfl-category-seo-title" name="pfl_category_seo_title" type="text" value="">
+        <p class="description">留空时使用 WordPress 默认文档标题。</p>
+    </div>
+
+    <div class="form-field pfl-category-content-field">
+        <label for="pfl-category-meta-description">Meta Description</label>
+        <textarea id="pfl-category-meta-description" name="pfl_category_meta_description" rows="3" maxlength="200"></textarea>
+        <p class="description">建议控制在 80～160 个中文字符以内。</p>
+    </div>
+    <?php
+}
+add_action(
+    'product_category_add_form_fields',
+    'pfl_product_category_add_content_fields',
+    20
+);
+
+
+function pfl_product_category_edit_content_fields(WP_Term $term): void
+{
+    $content = pfl_get_product_category_content($term);
+    wp_nonce_field('pfl_save_category_content', 'pfl_category_content_nonce');
+    ?>
+    <tr class="form-field pfl-category-content-field">
+        <th scope="row"><label>分类图片</label></th>
+        <td>
+            <?php pfl_render_category_image_control((int) $content['image_id']); ?>
+            <p class="description">用于分类页头部视觉区域和 CollectionPage 结构化数据。</p>
+        </td>
+    </tr>
+
+    <tr class="form-field pfl-category-content-field">
+        <th scope="row"><label for="pfl-category-top-content">分类顶部内容</label></th>
+        <td>
+            <textarea
+                class="large-text"
+                id="pfl-category-top-content"
+                name="pfl_category_top_content"
+                rows="6"
+            ><?php echo esc_textarea($content['top_content']); ?></textarea>
+            <p class="description">显示在分类标题下方，支持安全 HTML。</p>
+        </td>
+    </tr>
+
+    <tr class="form-field pfl-category-content-field">
+        <th scope="row"><label for="pfl-category-bottom-content">分类底部内容</label></th>
+        <td>
+            <textarea
+                class="large-text"
+                id="pfl-category-bottom-content"
+                name="pfl_category_bottom_content"
+                rows="9"
+            ><?php echo esc_textarea($content['bottom_content']); ?></textarea>
+            <p class="description">显示在产品结果之后，适合补充分类说明、应用范围和选型建议。</p>
+        </td>
+    </tr>
+
+    <tr class="form-field pfl-category-content-field">
+        <th scope="row"><label for="pfl-category-seo-title">SEO 标题</label></th>
+        <td>
+            <input
+                class="large-text"
+                id="pfl-category-seo-title"
+                name="pfl_category_seo_title"
+                type="text"
+                value="<?php echo esc_attr($content['seo_title']); ?>"
+            >
+            <p class="description">留空时使用 WordPress 默认文档标题。</p>
+        </td>
+    </tr>
+
+    <tr class="form-field pfl-category-content-field">
+        <th scope="row"><label for="pfl-category-meta-description">Meta Description</label></th>
+        <td>
+            <textarea
+                class="large-text"
+                id="pfl-category-meta-description"
+                name="pfl_category_meta_description"
+                rows="4"
+                maxlength="200"
+            ><?php echo esc_textarea($content['meta_description']); ?></textarea>
+            <p class="description">建议控制在 80～160 个中文字符以内。</p>
+        </td>
+    </tr>
+    <?php
+}
+add_action(
+    'product_category_edit_form_fields',
+    'pfl_product_category_edit_content_fields',
+    20
+);
+
+
+function pfl_save_product_category_content_fields(int $term_id): void
+{
+    if (
+        ! isset($_POST['pfl_category_content_nonce'])
+        || ! wp_verify_nonce(
+            sanitize_text_field(
+                wp_unslash($_POST['pfl_category_content_nonce'])
+            ),
+            'pfl_save_category_content'
+        )
+        || ! current_user_can('manage_categories')
+    ) {
+        return;
+    }
+
+    $image_id = isset($_POST['pfl_category_image_id'])
+        ? absint(wp_unslash($_POST['pfl_category_image_id']))
+        : 0;
+
+    update_term_meta(
+        $term_id,
+        'pfl_category_image_id',
+        $image_id
+    );
+
+    $html_fields = [
+        'pfl_category_top_content',
+        'pfl_category_bottom_content',
+    ];
+
+    foreach ($html_fields as $field) {
+        $value = isset($_POST[$field])
+            ? wp_kses_post(wp_unslash($_POST[$field]))
+            : '';
+
+        update_term_meta($term_id, $field, $value);
+    }
+
+    $seo_title = isset($_POST['pfl_category_seo_title'])
+        ? sanitize_text_field(
+            wp_unslash($_POST['pfl_category_seo_title'])
+        )
+        : '';
+
+    $meta_description = isset($_POST['pfl_category_meta_description'])
+        ? sanitize_textarea_field(
+            wp_unslash($_POST['pfl_category_meta_description'])
+        )
+        : '';
+
+    update_term_meta(
+        $term_id,
+        'pfl_category_seo_title',
+        $seo_title
+    );
+
+    update_term_meta(
+        $term_id,
+        'pfl_category_meta_description',
+        $meta_description
+    );
+}
+add_action(
+    'created_product_category',
+    'pfl_save_product_category_content_fields',
+    20
+);
+add_action(
+    'edited_product_category',
+    'pfl_save_product_category_content_fields',
+    20
+);
+
+
+function pfl_product_category_content_admin_assets(string $hook): void
+{
+    $screen = get_current_screen();
+
+    if (
+        ! $screen
+        || 'product_category' !== $screen->taxonomy
+        || ! in_array($hook, ['edit-tags.php', 'term.php'], true)
+    ) {
+        return;
+    }
+
+    wp_enqueue_media();
+    wp_enqueue_script('jquery');
+
+    $script = <<<'JS'
+    jQuery(function ($) {
+        $(document).on('click', '.pfl-category-image-select', function (event) {
+            event.preventDefault();
+
+            const $control = $(this).closest('.pfl-category-image-control');
+            const frame = wp.media({
+                title: '选择产品分类图片',
+                button: { text: '使用这张图片' },
+                multiple: false
+            });
+
+            frame.on('select', function () {
+                const attachment = frame.state().get('selection').first().toJSON();
+                const previewUrl = attachment.sizes && attachment.sizes.medium
+                    ? attachment.sizes.medium.url
+                    : attachment.url;
+
+                $control.find('.pfl-category-image-id').val(attachment.id);
+                $control.find('.pfl-category-image-preview')
+                    .addClass('has-image')
+                    .html($('<img>', { src: previewUrl, alt: '' }));
+                $control.find('.pfl-category-image-remove').prop('hidden', false);
+            });
+
+            frame.open();
+        });
+
+        $(document).on('click', '.pfl-category-image-remove', function (event) {
+            event.preventDefault();
+
+            const $control = $(this).closest('.pfl-category-image-control');
+            $control.find('.pfl-category-image-id').val('');
+            $control.find('.pfl-category-image-preview')
+                .removeClass('has-image')
+                .html('<span>尚未选择分类图片</span>');
+            $(this).prop('hidden', true);
+        });
+    });
+    JS;
+
+    wp_add_inline_script('jquery', $script);
+}
+add_action(
+    'admin_enqueue_scripts',
+    'pfl_product_category_content_admin_assets',
+    20
+);
+
+
+function pfl_product_category_content_admin_styles(): void
+{
+    $screen = get_current_screen();
+
+    if (! $screen || 'product_category' !== $screen->taxonomy) {
+        return;
+    }
+    ?>
+    <style>
+        .pfl-category-content-field { border-top: 1px solid #dcdcde; padding-top: 18px; }
+        .pfl-category-image-preview { display:grid; width:260px; max-width:100%; aspect-ratio:16/10; place-items:center; overflow:hidden; border:1px dashed #a7aaad; border-radius:8px; color:#646970; background:#f6f7f7; }
+        .pfl-category-image-preview img { width:100%; height:100%; object-fit:cover; }
+        .pfl-category-image-remove[hidden] { display:none; }
+    </style>
+    <?php
+}
+add_action(
+    'admin_head-edit-tags.php',
+    'pfl_product_category_content_admin_styles',
+    20
+);
+add_action(
+    'admin_head-term.php',
+    'pfl_product_category_content_admin_styles',
+    20
+);
+
+
+function pfl_product_category_content_columns(array $columns): array
+{
+    $columns['pfl_category_image'] = '分类图片';
+    $columns['pfl_category_seo'] = 'SEO 内容';
+
+    return $columns;
+}
+add_filter(
+    'manage_edit-product_category_columns',
+    'pfl_product_category_content_columns',
+    20
+);
+
+
+function pfl_product_category_content_column(
+    string $content,
+    string $column,
+    int $term_id
+): string {
+    if ('pfl_category_image' === $column) {
+        $image_id = (int) get_term_meta(
+            $term_id,
+            'pfl_category_image_id',
+            true
+        );
+
+        if (! $image_id) {
+            return '—';
+        }
+
+        return (string) wp_get_attachment_image(
+            $image_id,
+            [56, 40],
+            false,
+            [
+                'style' => 'width:56px;height:40px;object-fit:cover;border-radius:4px;',
+            ]
+        );
+    }
+
+    if ('pfl_category_seo' === $column) {
+        $term = get_term($term_id, 'product_category');
+
+        if (! $term instanceof WP_Term) {
+            return '—';
+        }
+
+        $content_data = pfl_get_product_category_content($term);
+        $status = [];
+
+        if ($content_data['seo_title']) {
+            $status[] = '标题';
+        }
+
+        if ($content_data['meta_description']) {
+            $status[] = '描述';
+        }
+
+        if ($content_data['bottom_content']) {
+            $status[] = '底部内容';
+        }
+
+        return empty($status)
+            ? '未设置'
+            : esc_html(implode(' / ', $status));
+    }
+
+    return $content;
+}
+add_filter(
+    'manage_product_category_custom_column',
+    'pfl_product_category_content_column',
+    20,
+    3
+);
+
+
+function pfl_builtin_seo_enabled(): bool
+{
+    $seo_plugin_active = (
+        defined('WPSEO_VERSION')
+        || defined('RANK_MATH_VERSION')
+        || defined('AIOSEO_VERSION')
+        || defined('SEOPRESS_VERSION')
+    );
+
+    return (bool) apply_filters(
+        'pfl_enable_builtin_seo',
+        ! $seo_plugin_active
+    );
+}
+
+
+function pfl_get_product_modifier_keys(): array
+{
+    return array_values(
+        array_unique(
+            array_merge(
+                array_keys(pfl_get_product_filter_schema()),
+                ['sort']
+            )
+        )
+    );
+}
+
+
+function pfl_product_request_has_modifiers(?array $source = null): bool
+{
+    $source = null === $source ? $_GET : $source;
+
+    foreach (pfl_get_product_modifier_keys() as $key) {
+        if (! array_key_exists($key, $source)) {
+            continue;
+        }
+
+        $value = $source[$key];
+
+        if (is_array($value)) {
+            if (! empty(array_filter($value, 'strlen'))) {
+                return true;
+            }
+        } elseif ('' !== trim((string) $value)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+
+function pfl_get_product_canonical_url(): string
+{
+    if (
+        ! is_post_type_archive('product')
+        && ! is_tax('product_category')
+    ) {
+        return '';
+    }
+
+    $base_url = pfl_get_product_filter_action();
+
+    if (pfl_product_request_has_modifiers()) {
+        return $base_url;
+    }
+
+    $paged = max(1, (int) get_query_var('paged'));
+
+    if ($paged > 1) {
+        return remove_query_arg(
+            pfl_get_product_modifier_keys(),
+            get_pagenum_link($paged)
+        );
+    }
+
+    return $base_url;
+}
+
+
+function pfl_get_product_archive_meta_description(): string
+{
+    if (is_tax('product_category')) {
+        $term = pfl_get_current_product_category();
+        $content = pfl_get_product_category_content($term);
+
+        if ($content['meta_description']) {
+            return $content['meta_description'];
+        }
+
+        $fallback = $content['top_content'];
+
+        if (! $fallback && $term) {
+            $fallback = term_description($term->term_id, 'product_category');
+        }
+
+        $fallback = trim(
+            preg_replace(
+                '/\s+/u',
+                ' ',
+                wp_strip_all_tags((string) $fallback)
+            )
+        );
+
+        if ($fallback) {
+            return wp_html_excerpt($fallback, 160, '…');
+        }
+
+        return $term
+            ? sprintf('浏览%s分类下的产品、规格和筛选条件。', $term->name)
+            : '';
+    }
+
+    if (is_post_type_archive('product')) {
+        return sprintf(
+            '浏览%s的全部产品目录，并按分类、品牌、属性和数值范围进行筛选。',
+            get_bloginfo('name')
+        );
+    }
+
+    return '';
+}
+
+
+function pfl_get_product_single_meta_description(int $post_id): string
+{
+    $excerpt = get_the_excerpt($post_id);
+
+    if (! $excerpt) {
+        $post = get_post($post_id);
+        $excerpt = $post instanceof WP_Post
+            ? $post->post_content
+            : '';
+    }
+
+    $excerpt = trim(
+        preg_replace(
+            '/\s+/u',
+            ' ',
+            wp_strip_all_tags((string) $excerpt)
+        )
+    );
+
+    return $excerpt
+        ? wp_html_excerpt($excerpt, 160, '…')
+        : '';
+}
+
+
+function pfl_product_document_title(string $title): string
+{
+    if (! pfl_builtin_seo_enabled() || ! is_tax('product_category')) {
+        return $title;
+    }
+
+    $content = pfl_get_product_category_content();
+
+    return $content['seo_title'] ?: $title;
+}
+add_filter(
+    'pre_get_document_title',
+    'pfl_product_document_title',
+    20
+);
+
+
+function pfl_output_product_archive_meta(): void
+{
+    if (! pfl_builtin_seo_enabled()) {
+        return;
+    }
+
+    if (is_singular('product')) {
+        $description = pfl_get_product_single_meta_description(
+            get_queried_object_id()
+        );
+        $canonical = '';
+    } elseif (
+        is_post_type_archive('product')
+        || is_tax('product_category')
+    ) {
+        $description = pfl_get_product_archive_meta_description();
+        $canonical = pfl_get_product_canonical_url();
+    } else {
+        return;
+    }
+
+    if ($description) {
+        echo '<meta name="description" content="'
+            . esc_attr($description)
+            . '">' . "\n";
+    }
+
+    // WordPress 核心已经为单篇产品输出 rel=canonical，归档页由主题补充。
+    if ($canonical) {
+        echo '<link rel="canonical" href="'
+            . esc_url($canonical)
+            . '">' . "\n";
+    }
+}
+add_action(
+    'wp_head',
+    'pfl_output_product_archive_meta',
+    5
+);
+
+
+function pfl_product_filter_robots(array $robots): array
+{
+    if (
+        (
+            is_post_type_archive('product')
+            || is_tax('product_category')
+        )
+        && pfl_product_request_has_modifiers()
+    ) {
+        $robots['noindex'] = true;
+        $robots['follow'] = true;
+    }
+
+    return $robots;
+}
+add_filter('wp_robots', 'pfl_product_filter_robots');
+
+
+function pfl_get_product_primary_category(int $post_id): ?WP_Term
+{
+    $terms = get_the_terms($post_id, 'product_category');
+
+    if (empty($terms) || is_wp_error($terms)) {
+        return null;
+    }
+
+    usort(
+        $terms,
+        static function (WP_Term $left, WP_Term $right): int {
+            $left_depth = count(
+                get_ancestors(
+                    $left->term_id,
+                    'product_category',
+                    'taxonomy'
+                )
+            );
+            $right_depth = count(
+                get_ancestors(
+                    $right->term_id,
+                    'product_category',
+                    'taxonomy'
+                )
+            );
+
+            return $right_depth <=> $left_depth;
+        }
+    );
+
+    return $terms[0] instanceof WP_Term ? $terms[0] : null;
+}
+
+
+function pfl_get_product_category_path_for_term(WP_Term $term): array
+{
+    $ancestor_ids = array_reverse(
+        get_ancestors(
+            $term->term_id,
+            'product_category',
+            'taxonomy'
+        )
+    );
+
+    $path = [];
+
+    foreach ($ancestor_ids as $ancestor_id) {
+        $ancestor = get_term(
+            (int) $ancestor_id,
+            'product_category'
+        );
+
+        if ($ancestor instanceof WP_Term) {
+            $path[] = $ancestor;
+        }
+    }
+
+    $path[] = $term;
+
+    return $path;
+}
+
+
+function pfl_get_breadcrumb_schema(): array
+{
+    $items = pfl_get_product_breadcrumb_items();
+
+    if (empty($items)) {
+        return [];
+    }
+
+    if (is_singular('product')) {
+        $current_url = get_permalink(get_queried_object_id());
+    } else {
+        $current_url = pfl_get_product_canonical_url();
+    }
+
+    $list = [];
+
+    foreach ($items as $index => $item) {
+        $url = ! empty($item['url'])
+            ? $item['url']
+            : $current_url;
+
+        $list[] = [
+            '@type'    => 'ListItem',
+            'position' => $index + 1,
+            'name'     => $item['label'],
+            'item'     => $url,
+        ];
+    }
+
+    return [
+        '@type'           => 'BreadcrumbList',
+        'itemListElement' => $list,
+    ];
+}
+
+
+function pfl_get_product_schema(int $post_id): array
+{
+    $post = get_post($post_id);
+
+    if (! $post instanceof WP_Post) {
+        return [];
+    }
+
+    $description = has_excerpt($post_id)
+        ? get_the_excerpt($post_id)
+        : wp_strip_all_tags($post->post_content);
+
+    $schema = [
+        '@type'       => 'Product',
+        'name'        => get_the_title($post_id),
+        'url'         => get_permalink($post_id),
+        'description' => wp_html_excerpt($description, 300, '…'),
+    ];
+
+    $image_url = get_the_post_thumbnail_url($post_id, 'full');
+
+    if ($image_url) {
+        $schema['image'] = [$image_url];
+    }
+
+    $model = (string) get_post_meta(
+        $post_id,
+        'product_model',
+        true
+    );
+
+    if ($model) {
+        $schema['sku'] = $model;
+        $schema['model'] = $model;
+    }
+
+    $brand_terms = get_the_terms($post_id, 'product_brand');
+
+    if (! empty($brand_terms) && ! is_wp_error($brand_terms)) {
+        $schema['brand'] = [
+            '@type' => 'Brand',
+            'name'  => $brand_terms[0]->name,
+        ];
+    }
+
+    $category = pfl_get_product_primary_category($post_id);
+
+    if ($category) {
+        $schema['category'] = $category->name;
+    }
+
+    $price = get_post_meta($post_id, 'product_price', true);
+
+    if ('' !== $price && is_numeric($price)) {
+        $schema['offers'] = [
+            '@type'         => 'Offer',
+            'url'           => get_permalink($post_id),
+            'priceCurrency' => 'CNY',
+            'price'         => number_format((float) $price, 2, '.', ''),
+        ];
+    }
+
+    $additional_properties = [];
+    $property_taxonomies = [
+        'product_voltage'   => '产品电压',
+        'product_material'  => '产品材质',
+        'product_automation'=> '自动化程度',
+        'product_protection'=> '防护等级',
+    ];
+
+    foreach ($property_taxonomies as $taxonomy => $label) {
+        $terms = get_the_terms($post_id, $taxonomy);
+
+        if (empty($terms) || is_wp_error($terms)) {
+            continue;
+        }
+
+        $additional_properties[] = [
+            '@type' => 'PropertyValue',
+            'name'  => $label,
+            'value' => implode('、', wp_list_pluck($terms, 'name')),
+        ];
+    }
+
+    $power = get_post_meta($post_id, 'product_power', true);
+
+    if ('' !== $power) {
+        $additional_properties[] = [
+            '@type' => 'PropertyValue',
+            'name'  => '功率',
+            'value' => $power . ' kW',
+        ];
+    }
+
+    if (! empty($additional_properties)) {
+        $schema['additionalProperty'] = $additional_properties;
+    }
+
+    return $schema;
+}
+
+
+function pfl_get_collection_schema(): array
+{
+    global $wp_query;
+
+    $name = is_tax('product_category')
+        ? single_term_title('', false)
+        : '全部产品';
+
+    $schema = [
+        '@type'       => 'CollectionPage',
+        'name'        => $name,
+        'url'         => pfl_get_product_canonical_url(),
+        'description' => pfl_get_product_archive_meta_description(),
+    ];
+
+    if (is_tax('product_category')) {
+        $content = pfl_get_product_category_content();
+
+        if ($content['image_id']) {
+            $image_url = wp_get_attachment_image_url(
+                $content['image_id'],
+                'full'
+            );
+
+            if ($image_url) {
+                $schema['primaryImageOfPage'] = [
+                    '@type'      => 'ImageObject',
+                    'contentUrl' => $image_url,
+                ];
+            }
+        }
+    }
+
+    $list_items = [];
+
+    if ($wp_query instanceof WP_Query) {
+        foreach ($wp_query->posts as $index => $post) {
+            if (! $post instanceof WP_Post) {
+                continue;
+            }
+
+            $list_items[] = [
+                '@type'    => 'ListItem',
+                'position' => $index + 1,
+                'name'     => get_the_title($post),
+                'url'      => get_permalink($post),
+            ];
+        }
+
+        $schema['mainEntity'] = [
+            '@type'           => 'ItemList',
+            'numberOfItems'    => count($list_items),
+            'itemListElement' => $list_items,
+        ];
+    }
+
+    return $schema;
+}
+
+
+function pfl_output_product_structured_data(): void
+{
+    if (
+        ! pfl_builtin_seo_enabled()
+        || (
+            ! is_singular('product')
+            && ! is_post_type_archive('product')
+            && ! is_tax('product_category')
+        )
+    ) {
+        return;
+    }
+
+    $graph = [];
+    $breadcrumbs = pfl_get_breadcrumb_schema();
+
+    if ($breadcrumbs) {
+        $graph[] = $breadcrumbs;
+    }
+
+    if (is_singular('product')) {
+        $entity = pfl_get_product_schema(get_queried_object_id());
+    } elseif (pfl_product_request_has_modifiers()) {
+        // 筛选结果页使用 noindex，并指向干净归档 Canonical。
+        // 为避免 ItemList 与 Canonical 页面内容不一致，此处不输出 CollectionPage。
+        $entity = [];
+    } else {
+        $entity = pfl_get_collection_schema();
+    }
+
+    if ($entity) {
+        $graph[] = $entity;
+    }
+
+    if (empty($graph)) {
+        return;
+    }
+
+    echo '<script type="application/ld+json">'
+        . wp_json_encode(
+            [
+                '@context' => 'https://schema.org',
+                '@graph'   => $graph,
+            ],
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+        )
+        . '</script>' . "\n";
+}
+add_action(
+    'wp_head',
+    'pfl_output_product_structured_data',
+    30
+);
+
+
+function pfl_import_demo_category_image(
+    int $term_id,
+    string $filename,
+    string $title
+): int {
+    $existing = (int) get_term_meta(
+        $term_id,
+        'pfl_category_image_id',
+        true
+    );
+
+    if ($existing && get_post($existing)) {
+        return $existing;
+    }
+
+    $source = get_theme_file_path('/assets/images/' . $filename);
+
+    if (! file_exists($source)) {
+        return 0;
+    }
+
+    require_once ABSPATH . 'wp-admin/includes/file.php';
+    require_once ABSPATH . 'wp-admin/includes/media.php';
+    require_once ABSPATH . 'wp-admin/includes/image.php';
+
+    $temporary = wp_tempnam($filename);
+
+    if (! $temporary || ! copy($source, $temporary)) {
+        return 0;
+    }
+
+    $file_array = [
+        'name'     => $filename,
+        'tmp_name' => $temporary,
+    ];
+
+    $attachment_id = media_handle_sideload(
+        $file_array,
+        0,
+        $title
+    );
+
+    if (is_wp_error($attachment_id)) {
+        @unlink($temporary);
+        return 0;
+    }
+
+    update_post_meta(
+        $attachment_id,
+        '_wp_attachment_image_alt',
+        $title
+    );
+
+    update_term_meta(
+        $term_id,
+        'pfl_category_image_id',
+        (int) $attachment_id
+    );
+
+    return (int) $attachment_id;
+}
+
+
 /**
  * 十四、演示数据导入器。
  */
@@ -1995,28 +3120,30 @@ function pfl_render_demo_data_page(): void
     if (isset($_POST['pfl_import_demo']) && check_admin_referer('pfl_import_demo_data')) {
         $result = pfl_import_demo_data();
         $message = sprintf(
-            '导入完成：处理了 %1$d 个分类或属性项，创建或更新了 %2$d 个产品，并写入分类专属筛选方案。',
+            '导入完成：处理了 %1$d 个分类或属性项，创建或更新了 %2$d 个产品，并导入了 %3$d 张分类图片。',
             (int) $result['terms'],
-            (int) $result['products']
+            (int) $result['products'],
+            (int) $result['images']
         );
     }
     ?>
     <div class="wrap">
-        <h1>产品导航筛选实验室：v1.3.0 演示数据</h1>
+        <h1>产品导航筛选实验室：v1.4.0 演示数据</h1>
         <?php if ($message) : ?><div class="notice notice-success is-dismissible"><p><?php echo esc_html($message); ?></p></div><?php endif; ?>
-        <p>点击按钮将补充动态产品属性、数值字段、分类专属筛选方案和演示产品。已有同名产品会被更新，不会重复创建。</p>
+        <p>点击按钮将补充动态产品属性、分类专属筛选方案、分类图片、分类上下文内容、SEO 字段和演示产品。已有同名产品会被更新，不会重复创建。</p>
         <form method="post">
             <?php wp_nonce_field('pfl_import_demo_data'); ?>
-            <p><button class="button button-primary button-hero" name="pfl_import_demo" type="submit" value="1">导入或更新 v1.3.0 演示数据</button></p>
+            <p><button class="button button-primary button-hero" name="pfl_import_demo" type="submit" value="1">导入或更新 v1.4.0 演示数据</button></p>
         </form>
         <hr>
         <h2>建议测试页面</h2>
         <p><a class="button" href="<?php echo esc_url(get_post_type_archive_link('product')); ?>" target="_blank">打开产品归档页</a></p>
         <ol>
-            <li>访问“包装设备”，观察包装专属筛选组。</li>
-            <li>访问“真空包装机”，确认其继承“包装设备”方案。</li>
-            <li>访问“输送设备”“电机”“传感器”，比较不同分类的筛选维度。</li>
-            <li>编辑产品分类，切换继承/专属方案并拖动筛选组顺序。</li>
+            <li>访问“工业设备”“包装设备”，检查分类图片、顶部内容和底部内容。</li>
+            <li>访问“真空包装机”，确认其继承“包装设备”筛选方案。</li>
+            <li>查看页面源代码，检查 Meta Description、Canonical 和 JSON-LD。</li>
+            <li>添加筛选参数后，确认页面输出 noindex、follow，并将 Canonical 指向干净分类地址。</li>
+            <li>编辑产品分类，测试图片、SEO 标题、Meta Description 与筛选方案设置。</li>
         </ol>
     </div>
     <?php
@@ -2058,6 +3185,7 @@ function pfl_import_demo_data(): array
 {
     $term_count = 0;
     $product_count = 0;
+    $image_count = 0;
 
     $industrial = pfl_ensure_term('工业设备', 'product_category');
     $commercial = pfl_ensure_term('商用设备', 'product_category');
@@ -2112,6 +3240,81 @@ function pfl_import_demo_data(): array
             update_term_meta($category_id, 'pfl_filter_groups', $profiles[$category_id]);
         } else {
             update_term_meta($category_id, 'pfl_filter_mode', 'inherit');
+        }
+    }
+
+    $category_content = [
+        $industrial => [
+            'top' => '<p>工业设备分类汇总包装、输送、清洗等生产线设备，可继续通过下级分类和动态属性筛选定位产品。</p>',
+            'bottom' => '<h2>工业设备选型说明</h2><p>选型时应综合考虑生产节拍、供电条件、设备材质、安装空间、维护方式和后续产能扩展。建议先确定设备用途与工艺范围，再结合功率、尺寸和自动化程度进行筛选。</p>',
+            'title' => '工业设备产品目录与参数筛选',
+            'description' => '浏览工业设备产品目录，按品牌、电压、材质、应用行业、价格和功率筛选包装设备、输送设备及清洗设备。',
+            'image' => 'category-industrial.jpg',
+        ],
+        $commercial => [
+            'top' => '<p>商用设备面向餐饮、清洁和服务场景，重点关注稳定性、卫生要求、操作效率与日常维护成本。</p>',
+            'bottom' => '<h2>商用设备应用建议</h2><p>商用环境通常具有高频使用、集中作业和快速周转特点。选型时可重点比较设备容量、自动化程度、清洁便利性、能耗和售后维护条件。</p>',
+            'title' => '商用设备产品目录与选型筛选',
+            'description' => '查看商用设备产品，并按品牌、电压、材质、自动化程度、价格和功率快速筛选。',
+            'image' => 'category-commercial.jpg',
+        ],
+        $parts => [
+            'top' => '<p>零部件分类收录电机、传感器等关键组件，可按照安装方式、防护等级、输出类型和数值参数筛选。</p>',
+            'bottom' => '<h2>工业零部件匹配原则</h2><p>零部件替换应核对接口、尺寸、电压、负载、信号类型和环境防护要求。仅凭外观或单一参数选型，可能导致兼容性和稳定性问题。</p>',
+            'title' => '工业零部件目录与参数匹配',
+            'description' => '浏览工业电机、传感器等零部件，按品牌、电压、安装方式、防护等级、转速和检测距离筛选。',
+            'image' => 'category-parts.jpg',
+        ],
+        $packaging => [
+            'top' => '<p>包装设备包含真空包装、连续封口和热收缩等设备，可按自动化程度、包装方式、材质、功率和价格组合筛选。</p>',
+            'bottom' => '<h2>包装设备如何选择</h2><p>需要先明确包装材料、产品尺寸、单件重量、目标速度和密封要求。连续生产场景通常更关注自动化与运行速度，小批量场景则可优先考虑设备尺寸与操作便利性。</p>',
+            'title' => '包装设备产品目录与多条件筛选',
+            'description' => '查看真空包装机、封口机和热收缩包装机，按品牌、电压、自动化程度、包装方式、材质、功率和价格筛选。',
+            'image' => 'category-packaging.jpg',
+        ],
+        $vacuum => [
+            'top' => '<p>真空包装机通过抽除包装内部空气延长保存时间，适合食品、医药及部分工业制品包装。</p>',
+            'bottom' => '<h2>真空包装机选型要点</h2><p>重点比较真空室尺寸、封口长度、真空泵能力、生产节拍和设备材质。连续式设备适合较高产能，台式和单室设备更适合中小批量应用。</p>',
+            'title' => '真空包装机型号、价格与参数筛选',
+            'description' => '浏览真空包装机型号，按品牌、电压、自动化程度、材质、功能、功率和价格进行筛选。',
+        ],
+        $conveying => [
+            'top' => '<p>输送设备用于生产线物料转运，可按照皮带、滚筒或链板结构，以及安装方式、宽度和运行速度筛选。</p>',
+            'bottom' => '<h2>输送设备选型要点</h2><p>应结合物料形态、单位重量、输送距离、转弯需求、清洁要求和上下游设备高度确定结构。食品场景通常更重视不锈钢材质与清洁便利性。</p>',
+            'title' => '输送设备类型、宽度与速度筛选',
+            'description' => '查看皮带输送机、滚筒输送机和链板输送机，按输送方式、安装方式、宽度、速度、功率和价格筛选。',
+        ],
+        $motors => [
+            'top' => '<p>电机分类支持按品牌、电压、安装方式、防护等级、功率和转速进行组合筛选。</p>',
+            'bottom' => '<h2>电机参数匹配</h2><p>电机选型需要同时核对额定功率、转速、供电电压、安装结构、防护等级和负载特性，并为启动和持续运行预留合理余量。</p>',
+            'title' => '工业电机功率、转速与安装方式筛选',
+            'description' => '浏览工业电机产品，按品牌、电压、安装方式、防护等级、功率、转速和价格筛选。',
+        ],
+        $sensors => [
+            'top' => '<p>传感器分类支持按检测方式、输出类型、防护等级、检测距离、电压和品牌筛选。</p>',
+            'bottom' => '<h2>传感器选型要点</h2><p>应根据被测对象、检测距离、安装空间、环境干扰、输出接口和控制系统输入要求进行匹配，并确认防护等级是否适应现场环境。</p>',
+            'title' => '工业传感器检测方式与输出类型筛选',
+            'description' => '浏览光电、接近和压力传感器，按品牌、电压、检测方式、输出类型、防护等级、检测距离和价格筛选。',
+        ],
+    ];
+
+    foreach ($category_content as $category_id => $content_item) {
+        update_term_meta($category_id, 'pfl_category_top_content', $content_item['top']);
+        update_term_meta($category_id, 'pfl_category_bottom_content', $content_item['bottom']);
+        update_term_meta($category_id, 'pfl_category_seo_title', $content_item['title']);
+        update_term_meta($category_id, 'pfl_category_meta_description', $content_item['description']);
+
+        if (! empty($content_item['image'])) {
+            $before_image = (int) get_term_meta($category_id, 'pfl_category_image_id', true);
+            $attachment_id = pfl_import_demo_category_image(
+                $category_id,
+                $content_item['image'],
+                get_term_field('name', $category_id, 'product_category') . '分类图片'
+            );
+
+            if ((! $before_image || ! get_post($before_image)) && $attachment_id) {
+                $image_count++;
+            }
         }
     }
 
@@ -2175,7 +3378,11 @@ function pfl_import_demo_data(): array
     }
 
     flush_rewrite_rules(false);
-    return ['terms' => $term_count, 'products' => $product_count];
+    return [
+        'terms' => $term_count,
+        'products' => $product_count,
+        'images' => $image_count,
+    ];
 }
 
 

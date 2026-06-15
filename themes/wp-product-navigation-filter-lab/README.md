@@ -1,8 +1,8 @@
-# WordPress 产品分类导航与动态属性筛选主题
+# WordPress 产品分类导航与动态筛选主题
 
-> 一套用于学习 WordPress 产品目录系统的经典主题，完整演示多层级分类导航、分类专属筛选方案、动态产品属性、AJAX 无刷新查询与父级配置继承。
+> 一套用于学习 WordPress 产品目录系统的经典主题，完整演示多层级分类导航、分类专属动态属性、AJAX 无刷新筛选、分类内容管理、Canonical、Robots 与结构化数据。
 
-![Version](https://img.shields.io/badge/version-v1.3.0-2563eb)
+![Version](https://img.shields.io/badge/version-v1.4.0-2563eb)
 ![WordPress](https://img.shields.io/badge/WordPress-Classic%20Theme-21759b)
 ![PHP](https://img.shields.io/badge/PHP-%E2%89%A57.4-777bb4)
 ![License](https://img.shields.io/badge/license-GPL--2.0%2B-green)
@@ -13,350 +13,143 @@
 
 本项目是一套面向 WordPress 经典主题开发的产品目录学习主题。
 
-v1.3.0 在 v1.2.0 AJAX 无刷新筛选的基础上，将固定筛选器升级为**配置驱动的动态产品属性系统**：
+它从基础的产品自定义文章类型开始，逐步实现：
 
-- 不同产品分类可以显示不同筛选维度；
-- 子分类可以继承父分类的筛选方案；
-- 分类后台可以切换“继承”或“专属方案”；
-- 筛选组支持勾选与拖动排序；
-- GET、AJAX、分页、历史记录和参数验证共用同一份 Schema；
-- 当前分类中没有有效数据的筛选组会自动隐藏；
-- taxonomy 选项会显示当前分类范围内的基础产品数量。
+- 多层级产品分类导航；
+- 产品分类路径高亮；
+- 分类专属筛选方案；
+- 父分类筛选配置继承；
+- 动态产品属性；
+- AJAX 无刷新筛选；
+- 普通 GET 降级；
+- 浏览器历史记录同步；
+- 分类图片与上下文内容；
+- 产品归档 SEO 控制；
+- Product、BreadcrumbList 与 CollectionPage 结构化数据。
 
-项目当前版本：
+当前版本：
 
 ```text
-v1.3.0
+v1.4.0
 ```
+
+v1.4.0 在 v1.3.0 动态产品属性系统的基础上，重点完善产品分类页面内容和基础 SEO 技术实现。
 
 ---
 
-## 核心功能
+# v1.4.0 核心更新
 
-### 产品内容结构
+## 产品分类内容管理
 
-- `product` 产品自定义文章类型
-- `product_category` 多层级产品分类
-- 产品品牌、电压、功能、材质、应用行业等属性分类法
-- 价格、功率、转速、宽度、检测距离和运行速度等数值字段
+产品分类后台新增：
 
-### 分类导航
+- 分类图片；
+- 分类顶部内容；
+- 分类底部内容；
+- SEO 标题；
+- Meta Description。
 
-- 多层级逐级展开
-- 当前路径保留
-- 祖先分类与当前分类高亮
-- 面包屑
-- 返回上一级
-- 一次加载分类并建立父子索引
-
-### 动态筛选
-
-- 分类专属筛选组
-- 父级筛选方案继承
-- 后台勾选筛选组
-- 后台拖拽排序
-- 自动隐藏无可用数据的筛选组
-- taxonomy 选项显示当前分类基础数量
-- 多选、范围、排序组合查询
-
-### AJAX 与降级
-
-- AJAX 无刷新更新产品列表
-- AJAX 分页和排序
-- 地址栏同步
-- 浏览器前进、后退
-- 刷新后恢复条件
-- 请求失败自动降级为普通 GET
-- 禁用 JavaScript 时仍可正常筛选
-
----
-
-## 新增属性
-
-### 离散属性 taxonomy
+分类页面结构升级为：
 
 ```text
-product_brand             产品品牌
-product_voltage           产品电压
-product_feature           功能特点
-product_material          产品材质
-product_application       应用行业
-product_automation        自动化程度
-product_installation      安装方式
-product_output_type       输出类型
-product_protection        防护等级
-product_packaging_type    包装方式
-product_conveyor_type     输送方式
-product_detection_type    检测方式
-```
-
-### 数值字段 post meta
-
-```text
-product_model                 产品型号
-product_price                 产品价格
-product_power                 产品功率
-product_rpm                   电机转速
-product_width                 设备宽度
-product_detection_distance    检测距离
-product_speed                 运行速度
-```
-
----
-
-## 动态筛选示例
-
-### 全部产品
-
-```text
-品牌
-电压
-功能特点
-材质
-应用行业
-价格
-功率
-```
-
-### 包装设备
-
-```text
-品牌
-电压
-自动化程度
-包装方式
-材质
-功能特点
-价格
-功率
-```
-
-“真空包装机”“自动封口机”“热收缩机”默认继承该方案。
-
-### 输送设备
-
-```text
-品牌
-电压
-输送方式
-安装方式
-材质
-设备宽度
-运行速度
-功率
-价格
-```
-
-### 电机
-
-```text
-品牌
-电压
-安装方式
-防护等级
-功率
-转速
-价格
-```
-
-### 传感器
-
-```text
-品牌
-电压
-检测方式
-输出类型
-防护等级
-检测距离
-价格
-```
-
----
-
-## 统一筛选 Schema
-
-核心函数：
-
-```php
-pfl_get_product_filter_schema()
-```
-
-每个筛选组统一声明：
-
-```php
-'brand' => [
-    'label'    => '产品品牌',
-    'type'     => 'taxonomy',
-    'taxonomy' => 'product_brand',
-    'operator' => 'IN',
-    'input'    => 'checkbox',
-]
-```
-
-数值范围示例：
-
-```php
-'rpm_range' => [
-    'label'    => '转速范围',
-    'type'     => 'range',
-    'meta_key' => 'product_rpm',
-    'options'  => [...],
-]
-```
-
-同一份 Schema 同时用于：
-
-```text
-前端筛选表单
-后台分类筛选设置
-GET 参数白名单
-AJAX 参数验证
-tax_query
-meta_query
-已选条件统计
-分页参数保留
-```
-
----
-
-## 分类筛选方案继承
-
-分类筛选配置保存于 term meta：
-
-```text
-pfl_filter_mode
-pfl_filter_groups
-```
-
-查找顺序：
-
-```text
-当前分类专属方案
+面包屑
 ↓
-最近的父分类专属方案
+分类图片 + 分类标题 + 顶部内容
 ↓
-更高层祖先方案
+多层级分类导航
 ↓
-全局默认方案
+动态多条件筛选
+↓
+产品结果
+↓
+分类底部补充内容
 ```
 
-核心函数：
+## SEO 基础能力
 
-```php
-pfl_resolve_filter_profile()
-pfl_get_active_filter_keys()
-```
+新增：
 
-前端会显示当前方案来源，例如：
+- 产品分类 SEO 标题；
+- 产品归档 Meta Description；
+- 产品详情 Meta Description；
+- 产品归档 Canonical；
+- 产品分类 Canonical；
+- 筛选结果页 `noindex, follow`；
+- 筛选页 Canonical 指向干净归档地址；
+- 常见 SEO 插件启用时自动停用主题内置 SEO 输出。
+
+## 结构化数据
+
+新增 JSON-LD：
 
 ```text
-当前分类专属方案
-继承自“包装设备”
-继承全局默认方案
+Product
+BreadcrumbList
+CollectionPage
+ItemList
+Offer
+Brand
+PropertyValue
+```
+
+其中：
+
+- 产品详情页输出 `Product`；
+- 产品归档与干净分类归档输出 `CollectionPage`；
+- 产品相关页面输出 `BreadcrumbList`；
+- 带筛选参数的结果页不输出 CollectionPage，避免结构化数据与 Canonical 页面内容不一致。
+
+---
+
+# 技术架构
+
+```text
+product 自定义文章类型
+│
+├── product_category
+│   ├── 多层级分类导航
+│   ├── 分类图片
+│   ├── 分类顶部内容
+│   ├── 分类底部内容
+│   ├── SEO 标题
+│   ├── Meta Description
+│   └── 分类专属筛选方案
+│
+├── 产品属性 taxonomy
+│   ├── 品牌
+│   ├── 电压
+│   ├── 功能
+│   ├── 材质
+│   ├── 应用行业
+│   ├── 自动化程度
+│   ├── 安装方式
+│   ├── 输出类型
+│   ├── 防护等级
+│   ├── 包装方式
+│   ├── 输送方式
+│   └── 检测方式
+│
+├── 数值 post meta
+│   ├── 价格
+│   ├── 功率
+│   ├── 转速
+│   ├── 宽度
+│   ├── 检测距离
+│   └── 运行速度
+│
+└── 前端查询
+    ├── 普通 GET
+    ├── AJAX
+    ├── tax_query
+    ├── meta_query
+    ├── 分页
+    ├── 排序
+    └── history.pushState
 ```
 
 ---
 
-## 后台配置方法
-
-进入：
-
-```text
-产品中心
-→ 产品分类
-→ 编辑某个分类
-```
-
-可以选择：
-
-```text
-继承父分类或全局默认方案
-使用当前分类专属方案
-```
-
-选择专属方案后：
-
-1. 勾选需要显示的筛选组；
-2. 拖动筛选组调整顺序；
-3. 更新分类；
-4. 前台分类页面自动按新配置显示。
-
-产品分类列表还会显示“继承”或当前专属筛选组摘要。
-
----
-
-## 当前分类有效选项
-
-taxonomy 选项不是简单输出全站全部 term。
-
-分类页会先取得当前分类及其子分类范围中的产品，然后统计这些产品实际使用的属性：
-
-```text
-当前产品分类
-↓
-取得范围内产品 ID
-↓
-读取产品关联的属性 term
-↓
-统计每个属性的基础产品数量
-↓
-只输出有数据的选项
-```
-
-核心函数：
-
-```php
-pfl_get_context_product_ids()
-pfl_get_filter_term_options()
-pfl_range_filter_has_values()
-```
-
-当前版本显示的是**当前分类基础数量**，不是随着其他筛选条件实时变化的联动数量。
-
----
-
-## 查询逻辑
-
-### taxonomy 属性
-
-使用：
-
-```php
-tax_query
-```
-
-品牌、电压等组内使用 `IN`，功能特点继续使用 `AND`。
-
-### 数值范围
-
-使用：
-
-```php
-meta_query
-```
-
-支持：
-
-```text
-<
-BETWEEN
->=
-```
-
-### 分类上下文
-
-产品分类归档本身负责限定产品目录范围，动态属性继续追加到该主查询中。
-
-普通 GET 和 AJAX 共用：
-
-```php
-pfl_get_product_query_parts()
-pfl_apply_product_query_parts()
-```
-
----
-
-## 主题文件结构
+# 主题文件结构
 
 ```text
 wp-product-navigation-filter-lab/
@@ -369,166 +162,737 @@ wp-product-navigation-filter-lab/
 ├── archive-product.php
 ├── taxonomy-product_category.php
 ├── single-product.php
+├── screenshot.png
 │
 ├── template-parts/
 │   └── product/
 │       ├── breadcrumbs.php
+│       ├── category-hero.php
+│       ├── category-bottom-content.php
 │       ├── category-navigation.php
 │       ├── filter-form.php
+│       ├── card.php
 │       ├── results.php
-│       ├── no-results.php
-│       └── card.php
+│       └── no-results.php
 │
 └── assets/
     ├── css/
     │   └── product.css
-    └── js/
-        └── product-filter.js
+    ├── js/
+    │   └── product-filter.js
+    └── images/
+        ├── category-industrial.jpg
+        ├── category-commercial.jpg
+        ├── category-parts.jpg
+        └── category-packaging.jpg
 ```
 
 ---
 
-## 安装与升级
+# 文件职责
 
-### 新安装
+| 文件 | 主要职责 |
+|---|---|
+| `functions.php` | 注册产品类型、分类法、字段、筛选、AJAX、SEO 与演示数据 |
+| `archive-product.php` | 全部产品归档页 |
+| `taxonomy-product_category.php` | 产品分类页总结构 |
+| `single-product.php` | 产品详情页 |
+| `category-hero.php` | 分类图片、标题和顶部内容 |
+| `category-bottom-content.php` | 分类结果下方补充内容 |
+| `category-navigation.php` | 多层级产品分类导航 |
+| `filter-form.php` | 配置驱动的动态筛选表单 |
+| `results.php` | GET 与 AJAX 共用结果区 |
+| `breadcrumbs.php` | 产品归档、分类与详情面包屑 |
+| `product-filter.js` | AJAX、分页、URL 和浏览器历史记录 |
+| `product.css` | 分类、筛选、结果与内容区域样式 |
 
-1. 上传主题 ZIP；
-2. 启用主题；
-3. 进入“外观 → 产品主题演示数据”；
-4. 点击“导入或更新 v1.3.0 演示数据”；
-5. 进入“设置 → 固定链接”；
-6. 点击一次“保存更改”；
-7. 打开 `/products/`。
+---
 
-### 从 v1.2.0 升级
+# 安装方法
 
-主题目录名称保持不变，可以直接覆盖。
+## WordPress 后台安装
 
-升级后务必再次运行：
+进入：
 
 ```text
-外观 → 产品主题演示数据
-→ 导入或更新 v1.3.0 演示数据
+外观
+→ 主题
+→ 安装主题
+→ 上传主题
 ```
 
-这一步会：
+上传主题 ZIP 文件并启用。
 
-- 为已有演示产品补充新属性；
-- 写入转速、宽度、检测距离等数值；
-- 新增缺少的演示产品；
-- 写入分类专属筛选方案；
-- 已有同名产品不会重复创建。
+## 手动安装
 
-随后清除浏览器与站点缓存，并重新保存固定链接。
-
----
-
-## 测试建议
-
-### 包装设备继承
-
-1. 打开“包装设备”；
-2. 确认显示包装方式和自动化程度；
-3. 打开“真空包装机”；
-4. 确认显示“继承自包装设备”。
-
-### 分类差异
-
-分别访问：
+将主题目录复制到：
 
 ```text
-输送设备
-电机
-传感器
+wp-content/themes/
 ```
 
-确认筛选组和顺序各不相同。
-
-### 后台专属配置
-
-1. 编辑某个产品分类；
-2. 选择“专属方案”；
-3. 勾选并拖动筛选组；
-4. 更新后刷新前台分类页。
-
-### AJAX 兼容
-
-测试：
-
-- 条件自动更新；
-- 分页；
-- 排序；
-- 地址栏；
-- 前进和后退；
-- 刷新恢复；
-- JavaScript 禁用后的普通 GET。
+然后在 WordPress 后台启用主题。
 
 ---
 
-## v1.3.0 已完成功能
+# 从 v1.3.0 升级
 
-- [x] 统一筛选 Schema
-- [x] 12 个离散属性分类法
-- [x] 7 个产品数值/文本字段
-- [x] 不同分类显示不同筛选组
-- [x] 父分类筛选方案继承
-- [x] 分类后台继承/专属模式
-- [x] 后台筛选组勾选
-- [x] 后台筛选组拖动排序
-- [x] 分类列表显示筛选方案摘要
-- [x] 自动隐藏无有效选项的 taxonomy 组
-- [x] 自动隐藏没有数值数据的范围组
-- [x] 当前分类范围基础选项数量
-- [x] GET 与 AJAX 动态参数白名单
-- [x] 动态 `tax_query` 与 `meta_query`
-- [x] AJAX 分页和历史记录兼容
-- [x] 演示数据升级与已有产品更新
-- [x] 产品详情显示扩展属性
-
----
-
-## 后续方向
-
-### v1.4.0
-
-SEO 与分类内容增强：
-
-- 分类特色图片
-- 分类顶部与底部内容
-- 产品面包屑 Schema
-- Product Schema
-- 筛选参数 canonical
-- 参数页面索引控制
-
-### v1.5.0
-
-联动计数和性能增强：
-
-- 其他条件作用下的实时筛选数量
-- 无结果选项禁用
-- 属性统计缓存
-- 大数据量查询分析
-- 缓存失效机制
-
-### v2.0.0
-
-业务插件化：
+主题目录名保持不变：
 
 ```text
-插件负责产品类型、属性、字段和筛选业务
-主题负责模板、CSS 和 JavaScript
+wp-product-navigation-filter-lab
+```
+
+可以直接覆盖旧版本文件。
+
+升级后依次执行：
+
+```text
+1. 清除浏览器缓存和站点缓存
+2. 外观 → 产品主题演示数据
+3. 点击“导入或更新 v1.4.0 演示数据”
+4. 设置 → 固定链接
+5. 点击“保存更改”
+```
+
+演示数据更新会：
+
+- 保留已有同名演示产品；
+- 更新动态属性；
+- 写入分类筛选方案；
+- 写入分类顶部和底部内容；
+- 写入分类 SEO 标题和 Meta Description；
+- 导入分类演示图片。
+
+---
+
+# 主要访问地址
+
+## 产品归档
+
+```text
+/products/
+```
+
+## 产品分类
+
+```text
+/product-category/分类别名/
+```
+
+## 产品详情
+
+```text
+/products/产品别名/
 ```
 
 ---
 
-## 注意事项
+# 产品分类内容字段
 
-为了方便集中学习，本项目仍将内容类型、分类法、字段、后台配置和查询逻辑写在主题的 `functions.php` 中。
+## 分类图片
 
-正式商业项目更推荐将业务结构迁移到独立插件。
+字段：
+
+```text
+pfl_category_image_id
+```
+
+用途：
+
+- 分类页头部图片；
+- CollectionPage 的 `primaryImageOfPage`；
+- 分类后台列表预览。
+
+## 分类顶部内容
+
+字段：
+
+```text
+pfl_category_top_content
+```
+
+显示位置：
+
+```text
+分类标题下方
+```
+
+适合：
+
+- 分类简介；
+- 产品范围说明；
+- 主要应用场景；
+- 筛选使用提示。
+
+## 分类底部内容
+
+字段：
+
+```text
+pfl_category_bottom_content
+```
+
+显示位置：
+
+```text
+产品结果和分页之后
+```
+
+适合：
+
+- 选型指南；
+- 参数解释；
+- 应用说明；
+- 常见问题；
+- 分类补充内容。
+
+## SEO 标题
+
+字段：
+
+```text
+pfl_category_seo_title
+```
+
+留空时继续使用 WordPress 默认文档标题。
+
+## Meta Description
+
+字段：
+
+```text
+pfl_category_meta_description
+```
+
+未填写时，主题依次尝试：
+
+```text
+分类顶部内容
+↓
+WordPress 分类描述
+↓
+自动生成的分类描述
+```
 
 ---
 
-## License
+# Canonical 逻辑
 
-GPL-2.0-or-later
+## 干净产品归档
+
+```text
+/products/
+```
+
+Canonical 指向自身。
+
+## 干净产品分类
+
+```text
+/product-category/industrial-equipment/
+```
+
+Canonical 指向自身。
+
+## 带筛选参数的页面
+
+例如：
+
+```text
+/products/?brand[]=huadong&voltage[]=380v
+```
+
+主题将：
+
+```text
+Robots：noindex, follow
+Canonical：/products/
+```
+
+分类筛选页同样指向当前分类的干净地址。
+
+## 干净分页
+
+未附加筛选参数时，分页 Canonical 保留当前页码。
+
+---
+
+# Robots 逻辑
+
+主题通过：
+
+```php
+wp_robots
+```
+
+检查以下参数：
+
+- 所有动态筛选 Schema 参数；
+- 排序参数 `sort`。
+
+只要存在有效筛选或排序条件，就增加：
+
+```text
+noindex
+follow
+```
+
+这样可以减少大量参数组合页面被搜索引擎重复索引。
+
+---
+
+# 内置 SEO 与第三方 SEO 插件
+
+主题内置 SEO 主要用于学习原理。
+
+检测到以下常见 SEO 插件常量时，主题会自动停用自身的 Meta、Canonical 和 JSON-LD 输出：
+
+```text
+Yoast SEO
+Rank Math
+All in One SEO
+SEOPress
+```
+
+也可以通过过滤器手动控制：
+
+```php
+add_filter(
+    'pfl_enable_builtin_seo',
+    '__return_false'
+);
+```
+
+正式网站已经使用专业 SEO 插件时，建议由插件统一管理 SEO 输出。
+
+---
+
+# Product 结构化数据
+
+产品详情页输出：
+
+```text
+Product
+```
+
+可包含：
+
+- 产品名称；
+- 产品地址；
+- 产品描述；
+- 产品图片；
+- 型号；
+- 品牌；
+- 产品分类；
+- 价格和 CNY 币种；
+- 电压；
+- 材质；
+- 自动化程度；
+- 防护等级；
+- 功率。
+
+示意：
+
+```json
+{
+  "@type": "Product",
+  "name": "双室真空包装机",
+  "sku": "VP-600D",
+  "brand": {
+    "@type": "Brand",
+    "name": "华东机械"
+  },
+  "offers": {
+    "@type": "Offer",
+    "priceCurrency": "CNY",
+    "price": "46800.00"
+  }
+}
+```
+
+当前版本是教学型基础实现，不代替完整电商库存、配送、退货和商家政策数据。
+
+---
+
+# BreadcrumbList 结构化数据
+
+以下页面输出面包屑 JSON-LD：
+
+- 全部产品归档；
+- 产品分类；
+- 产品详情。
+
+产品详情路径示例：
+
+```text
+首页
+→ 产品中心
+→ 工业设备
+→ 包装设备
+→ 真空包装机
+→ 双室真空包装机
+```
+
+前端可见面包屑和 JSON-LD 使用同一份数据来源。
+
+---
+
+# CollectionPage 结构化数据
+
+干净的产品归档和分类归档输出：
+
+```text
+CollectionPage
+└── ItemList
+```
+
+ItemList 使用当前分页显示的产品。
+
+带筛选参数的页面不会输出 CollectionPage，原因是：
+
+```text
+筛选页面内容
+≠
+Canonical 指向的干净归档内容
+```
+
+这样可以避免结构化数据与 Canonical 页面不一致。
+
+---
+
+# 多层级分类导航
+
+导航实现继续保留：
+
+- 一级分类始终显示；
+- 当前路径逐级保留；
+- 当前分类显示直接子分类；
+- 祖先分类和当前分类使用不同状态；
+- 没有下级时停止展开；
+- 一次读取分类并构建父子索引。
+
+核心函数：
+
+```php
+pfl_get_product_category_index()
+pfl_get_category_navigation_levels()
+pfl_get_current_product_category_path()
+```
+
+---
+
+# 动态筛选系统
+
+v1.4.0 继续使用 v1.3.0 的统一 Schema：
+
+```php
+pfl_get_product_filter_schema()
+```
+
+同一份配置驱动：
+
+- 前端筛选组；
+- GET 参数读取；
+- AJAX 参数读取；
+- 参数白名单；
+- `tax_query`；
+- `meta_query`；
+- 已选条件；
+- 分页参数；
+- 浏览器历史记录。
+
+---
+
+# 分类专属筛选方案
+
+产品分类后台支持：
+
+```text
+继承父级或全局默认方案
+使用当前分类专属方案
+```
+
+专属方案支持：
+
+- 勾选筛选组；
+- 拖动排序；
+- 子分类继承；
+- 自动隐藏当前范围没有有效数据的筛选组。
+
+例如：
+
+```text
+包装设备：
+品牌、电压、自动化程度、包装方式、材质、功能、价格、功率
+
+电机：
+品牌、电压、安装方式、防护等级、功率、转速、价格
+
+传感器：
+品牌、电压、检测方式、输出类型、防护等级、检测距离、价格
+```
+
+---
+
+# AJAX 与普通 GET
+
+## JavaScript 可用
+
+```text
+选择条件
+↓
+AJAX 请求
+↓
+更新产品数量
+↓
+更新卡片
+↓
+更新分页
+↓
+更新地址栏
+```
+
+## JavaScript 不可用或请求失败
+
+```text
+普通 GET 表单
+↓
+WordPress 主查询
+↓
+完整页面返回
+```
+
+这种方式属于渐进增强。
+
+---
+
+# 演示数据
+
+v1.4.0 演示数据包括：
+
+## 产品分类
+
+```text
+工业设备
+├── 包装设备
+│   ├── 真空包装机
+│   ├── 自动封口机
+│   └── 热收缩机
+├── 输送设备
+└── 清洗设备
+
+商用设备
+├── 厨房设备
+└── 商用清洁设备
+
+零部件
+├── 电机
+└── 传感器
+```
+
+## 分类内容示例
+
+重点分类会自动写入：
+
+- 分类图片；
+- 顶部简介；
+- 底部选型说明；
+- SEO 标题；
+- Meta Description。
+
+## 产品数据
+
+包含包装设备、输送设备、电机、传感器等多种演示产品，用于测试：
+
+- 动态筛选；
+- 分类继承；
+- 数值范围；
+- Product JSON-LD；
+- 分类结构化数据。
+
+---
+
+# 推荐测试清单
+
+## 分类内容
+
+- [ ] 分类图片正常显示；
+- [ ] 顶部内容正常显示；
+- [ ] 底部内容正常显示；
+- [ ] 没有自定义顶部内容时回退到分类描述；
+- [ ] 后台可选择和移除分类图片。
+
+## SEO
+
+- [ ] 分类 SEO 标题生效；
+- [ ] Meta Description 正常输出；
+- [ ] 干净分类页 Canonical 指向自身；
+- [ ] 筛选页输出 `noindex, follow`；
+- [ ] 筛选页 Canonical 指向干净分类页；
+- [ ] 使用 SEO 插件时主题内置输出停止。
+
+## 结构化数据
+
+- [ ] 产品详情输出 Product；
+- [ ] 产品详情输出 BreadcrumbList；
+- [ ] 干净归档输出 CollectionPage；
+- [ ] 筛选归档不输出 CollectionPage；
+- [ ] JSON-LD 是有效 JSON。
+
+## 原有功能回归
+
+- [ ] 分类层级导航正常；
+- [ ] 分类专属筛选方案正常；
+- [ ] AJAX 筛选正常；
+- [ ] AJAX 分页正常；
+- [ ] 排序正常；
+- [ ] 浏览器前进和后退正常；
+- [ ] 普通 GET 降级正常。
+
+---
+
+# v1.4.0 已完成功能
+
+- [x] 分类图片 term meta
+- [x] WordPress 媒体库图片选择器
+- [x] 分类顶部内容
+- [x] 分类底部内容
+- [x] 分类 SEO 标题
+- [x] 分类 Meta Description
+- [x] 分类后台 SEO 状态列
+- [x] 产品详情 Meta Description
+- [x] 产品归档 Canonical
+- [x] 产品分类 Canonical
+- [x] 筛选结果 noindex
+- [x] 筛选结果 Canonical 清理
+- [x] Product JSON-LD
+- [x] BreadcrumbList JSON-LD
+- [x] CollectionPage JSON-LD
+- [x] ItemList JSON-LD
+- [x] 产品详情可见面包屑
+- [x] 常见 SEO 插件冲突规避
+- [x] 分类演示图片导入
+- [x] 分类内容演示数据
+- [x] 保留动态属性与 AJAX 筛选
+
+---
+
+# 后续版本规划
+
+## v1.5.0：筛选计数与性能优化
+
+计划增加：
+
+- 当前条件上下文的实时选项数量；
+- 不可用筛选项禁用；
+- 选项数量 AJAX 联动；
+- 查询结果缓存；
+- term 计数缓存；
+- AJAX 响应性能分析；
+- 数据库查询次数展示；
+- 缓存失效策略。
+
+## v1.6.0：产品展示与转化增强
+
+计划增加：
+
+- 产品图库；
+- 参数分组；
+- 相关产品；
+- 产品对比；
+- 收藏或询盘入口；
+- 产品打印页面；
+- 更完整的产品结构化数据。
+
+## v2.0.0：业务插件化
+
+计划将以下功能迁移到独立插件：
+
+```text
+产品文章类型
+产品分类法
+产品属性
+产品字段
+筛选 Schema
+AJAX 查询
+分类内容字段
+SEO 业务规则
+演示数据工具
+```
+
+主题只保留：
+
+```text
+模板
+HTML
+CSS
+JavaScript
+展示组件
+```
+
+---
+
+# 注意事项
+
+本项目为了便于集中学习，按照当前开发目标将产品类型、分类法、字段、筛选和 SEO 逻辑写在主题 `functions.php` 中。
+
+正式商业项目更推荐：
+
+```text
+插件负责数据与业务逻辑
+主题负责模板与视觉展示
+专业 SEO 插件负责站点 SEO
+```
+
+---
+
+# 版本记录
+
+## v1.4.0
+
+- 增加分类图片、顶部内容和底部内容；
+- 增加分类 SEO 标题和 Meta Description；
+- 增加产品详情 Meta Description；
+- 增加产品归档和分类归档 Canonical；
+- 筛选和排序页面增加 `noindex, follow`；
+- 筛选页面 Canonical 指向干净归档；
+- 增加 Product、BreadcrumbList 和 CollectionPage JSON-LD；
+- 产品详情页增加可见面包屑；
+- 增加 SEO 插件冲突规避；
+- 增加分类图片及 SEO 演示数据。
+
+## v1.3.0
+
+- 动态产品属性系统；
+- 分类专属筛选方案；
+- 父级筛选配置继承；
+- 分类后台筛选组勾选与排序。
+
+## v1.2.0
+
+- AJAX 无刷新筛选；
+- AJAX 分页；
+- 地址栏和浏览器历史记录同步；
+- 普通 GET 降级。
+
+## v1.1.0
+
+- 筛选体验优化；
+- 面包屑与返回上一级；
+- 查询安全和后台产品管理增强。
+
+## v1.0.0
+
+- 产品自定义文章类型；
+- 多层级分类导航；
+- GET 多条件筛选；
+- `pre_get_posts`、`tax_query` 和 `meta_query`。
+
+---
+
+# License
+
+本项目采用 GPL-2.0-or-later 许可证。
+
+你可以自由学习、修改和继续扩展本项目。

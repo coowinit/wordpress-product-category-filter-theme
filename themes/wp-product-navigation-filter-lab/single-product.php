@@ -5,6 +5,10 @@
 
 get_header();
 
+get_template_part(
+    'template-parts/product/breadcrumbs'
+);
+
 while (have_posts()) :
     the_post();
 
