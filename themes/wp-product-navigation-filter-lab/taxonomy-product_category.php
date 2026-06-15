@@ -3,15 +3,20 @@
  * 产品分类归档页。
  *
  * 页面结构：
- * 1. 当前分类标题
- * 2. 多层级分类导航
- * 3. 多条件筛选表单
- * 4. 当前分类主循环
+ * 1. 面包屑和返回上一级
+ * 2. 当前分类标题
+ * 3. 多层级分类导航
+ * 4. 多条件筛选表单
+ * 5. 当前分类主循环
  */
 
 get_header();
 
 $current_term = get_queried_object();
+
+get_template_part(
+    'template-parts/product/breadcrumbs'
+);
 ?>
 
 <header class="archive-heading">
@@ -36,7 +41,7 @@ get_template_part(
 );
 ?>
 
-<section class="product-results">
+<section id="product-results" class="product-results" tabindex="-1">
     <div class="product-results__header">
         <strong>
             当前分类共找到
@@ -73,9 +78,11 @@ get_template_part(
         );
         ?>
     <?php else : ?>
-        <div class="empty-products">
-            当前分类中没有符合筛选条件的产品。
-        </div>
+        <?php
+        get_template_part(
+            'template-parts/product/no-results'
+        );
+        ?>
     <?php endif; ?>
 </section>
 

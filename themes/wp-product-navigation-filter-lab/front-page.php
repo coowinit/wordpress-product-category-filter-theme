@@ -13,7 +13,7 @@ $product_archive = get_post_type_archive_link('product');
 
     <p>
         本主题把自定义文章类型、层级分类法、产品属性、GET 筛选、
-        pre_get_posts、tax_query、meta_query、模板拆分和分页保留参数连接成一个完整示例。
+        pre_get_posts、tax_query、meta_query、参数验证、面包屑、后台管理列和分页保留参数连接成一个完整示例。
     </p>
 
     <div class="hero__actions">

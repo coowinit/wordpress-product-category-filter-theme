@@ -16,18 +16,23 @@ $level_names = [
     4 => '四级分类',
     5 => '五级分类',
 ];
+
+$is_product_archive = is_post_type_archive('product');
 ?>
 
 <nav class="category-navigation" aria-label="产品分类导航">
     <div class="category-navigation__heading">
         <div>
             <h2>产品分类导航</h2>
-            <p>沿当前分类路径逐级展开，同时保留已经经过的上级导航。</p>
+            <p>祖先路径使用浅色标记，当前分类使用深色标记，并继续显示下一层分类。</p>
         </div>
 
         <a
-            class="category-navigation__all"
+            class="category-navigation__all<?php echo $is_product_archive ? ' is-active' : ''; ?>"
             href="<?php echo esc_url(get_post_type_archive_link('product')); ?>"
+            <?php if ($is_product_archive) : ?>
+                aria-current="page"
+            <?php endif; ?>
         >
             全部产品
         </a>
@@ -55,36 +60,34 @@ $level_names = [
                             continue;
                         }
 
-                        $is_active = (
-                            (int) $term->term_id
-                            ===
-                            (int) $level['active_id']
+                        $term_id = (int) $term->term_id;
+                        $is_current = $term_id === (int) $level['current_id'];
+                        $is_path = (
+                            ! $is_current
+                            && $term_id === (int) $level['active_id']
                         );
+                        $has_children = pfl_product_category_has_children($term_id);
 
-                        $children = get_terms(
-                            [
-                                'taxonomy'   => 'product_category',
-                                'parent'     => $term->term_id,
-                                'hide_empty' => false,
-                                'number'     => 1,
-                                'fields'     => 'ids',
-                            ]
-                        );
+                        $classes = ['category-level__link'];
 
-                        $has_children = (
-                            ! is_wp_error($children)
-                            && ! empty($children)
-                        );
+                        if ($is_path) {
+                            $classes[] = 'is-path';
+                        }
+
+                        if ($is_current) {
+                            $classes[] = 'is-current';
+                        }
+
+                        if ($has_children) {
+                            $classes[] = 'has-children';
+                        }
                         ?>
 
                         <li>
                             <a
-                                class="category-level__link<?php
-                                echo $is_active ? ' is-active' : '';
-                                echo $has_children ? ' has-children' : '';
-                                ?>"
+                                class="<?php echo esc_attr(implode(' ', $classes)); ?>"
                                 href="<?php echo esc_url($term_link); ?>"
-                                <?php if ($is_active) : ?>
+                                <?php if ($is_current) : ?>
                                     aria-current="page"
                                 <?php endif; ?>
                             >

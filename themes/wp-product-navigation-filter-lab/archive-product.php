@@ -4,13 +4,17 @@
  */
 
 get_header();
+
+get_template_part(
+    'template-parts/product/breadcrumbs'
+);
 ?>
 
 <header class="archive-heading">
     <h1>全部产品</h1>
 
     <div class="archive-description">
-        这里显示全部产品。第一行导航是产品一级分类，多条件筛选会继续缩小产品范围。
+        这里显示全部产品。分类导航负责进入具体目录，多条件筛选负责缩小当前产品结果。
     </div>
 </header>
 
@@ -24,7 +28,7 @@ get_template_part(
 );
 ?>
 
-<section class="product-results">
+<section id="product-results" class="product-results" tabindex="-1">
     <div class="product-results__header">
         <strong>
             共找到 <?php echo esc_html((string) $GLOBALS['wp_query']->found_posts); ?> 个产品
@@ -48,10 +52,10 @@ get_template_part(
         echo wp_kses_post(
             paginate_links(
                 [
-                    'total'    => $GLOBALS['wp_query']->max_num_pages,
-                    'current'  => max(1, get_query_var('paged')),
-                    'type'     => 'list',
-                    'add_args' => pfl_get_pagination_filter_args(),
+                    'total'     => $GLOBALS['wp_query']->max_num_pages,
+                    'current'   => max(1, get_query_var('paged')),
+                    'type'      => 'list',
+                    'add_args'  => pfl_get_pagination_filter_args(),
                     'prev_text' => '上一页',
                     'next_text' => '下一页',
                 ]
@@ -59,9 +63,11 @@ get_template_part(
         );
         ?>
     <?php else : ?>
-        <div class="empty-products">
-            没有符合当前筛选条件的产品，请减少条件后重试。
-        </div>
+        <?php
+        get_template_part(
+            'template-parts/product/no-results'
+        );
+        ?>
     <?php endif; ?>
 </section>
 

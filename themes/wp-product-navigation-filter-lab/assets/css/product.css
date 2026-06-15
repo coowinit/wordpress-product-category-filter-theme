@@ -466,3 +466,319 @@
     flex-direction: column;
   }
 }
+
+
+/* =========================================================
+   v1.1.0：面包屑与返回上一级
+   ========================================================= */
+.product-navigation-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 16px;
+}
+
+.product-breadcrumb ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  color: var(--pfl-muted);
+  list-style: none;
+  font-size: 14px;
+}
+
+.product-breadcrumb li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.product-breadcrumb li:not(:last-child)::after {
+  content: "›";
+  color: #9ba5b5;
+  font-size: 17px;
+}
+
+.product-breadcrumb a:hover {
+  color: var(--pfl-primary);
+}
+
+.product-breadcrumb li[aria-current="page"] {
+  color: var(--pfl-primary-dark);
+  font-weight: 700;
+}
+
+.product-parent-link {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 38px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid #d6deeb;
+  border-radius: 10px;
+  color: #465067;
+  background: #fff;
+}
+
+.product-parent-link:hover {
+  border-color: #9db9f5;
+  color: var(--pfl-primary-dark);
+  background: var(--pfl-primary-soft);
+}
+
+/* =========================================================
+   v1.1.0：分类路径和当前分类分层高亮
+   ========================================================= */
+.category-navigation__all.is-active {
+  border-color: var(--pfl-primary);
+  color: #fff;
+  background: var(--pfl-primary);
+}
+
+.category-level__link small {
+  margin-left: 7px;
+  color: inherit;
+  font-size: 11px;
+  opacity: .65;
+}
+
+.category-level__link.is-path {
+  border-color: #b9ccf5;
+  color: var(--pfl-primary-dark);
+  background: var(--pfl-primary-soft);
+}
+
+.category-level__link.is-current {
+  border-color: var(--pfl-primary);
+  color: #fff;
+  background: linear-gradient(135deg, var(--pfl-primary), #5075e9);
+  box-shadow: 0 8px 18px rgba(37,99,235,.2);
+}
+
+/* 覆盖 v1.0 的 active 命名，保留向右的下级导航提示。 */
+.category-level__link.is-active {
+  border-color: #b9ccf5;
+  color: var(--pfl-primary-dark);
+  background: var(--pfl-primary-soft);
+  box-shadow: none;
+}
+
+/* =========================================================
+   v1.1.0：筛选状态、分组清空与稳定的行布局
+   ========================================================= */
+.filter-state-bar {
+  display: grid;
+  grid-template-columns: minmax(210px, auto) minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+  margin: 0 -26px;
+  padding: 15px 26px;
+  border-bottom: 1px solid var(--pfl-line);
+  background: #fbfcfe;
+}
+
+.filter-state-bar__message {
+  display: grid;
+  gap: 4px;
+}
+
+.filter-state-bar__message strong {
+  color: #374151;
+  font-size: 14px;
+}
+
+.filter-state-bar__message span {
+  color: var(--pfl-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.product-filter-panel.has-pending-changes .filter-state-bar {
+  background: #fff9e9;
+}
+
+.product-filter-panel.has-pending-changes .filter-state-bar__message strong {
+  color: #9a6700;
+}
+
+.product-filter-panel.has-pending-changes .filter-submit-button {
+  box-shadow: 0 0 0 4px rgba(37,99,235,.12), 0 8px 18px rgba(37,99,235,.2);
+}
+
+#clearAllFilters {
+  min-height: 32px;
+  padding: 0 11px;
+}
+
+.filter-row {
+  position: static;
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 18px;
+  min-width: 0;
+  margin: 0;
+  padding: 20px 0;
+  border: 0;
+  border-bottom: 1px dashed var(--pfl-line);
+}
+
+.filter-row__heading {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 7px;
+  padding-top: 8px;
+  color: #465067;
+  font-size: 14px;
+}
+
+.filter-group-clear {
+  padding: 0;
+  border: 0;
+  color: var(--pfl-primary);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.filter-group-clear:hover {
+  text-decoration: underline;
+}
+
+.filter-group-clear[hidden] {
+  display: none;
+}
+
+.filter-options {
+  align-self: start;
+}
+
+.filter-sort {
+  display: inline-flex;
+  align-items: center;
+}
+
+.product-results {
+  scroll-margin-top: 24px;
+  outline: none;
+}
+
+/* =========================================================
+   v1.1.0：增强无结果状态
+   ========================================================= */
+.empty-products--enhanced {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 48px 24px;
+}
+
+.empty-products--enhanced h2,
+.empty-products--enhanced p {
+  margin: 0;
+}
+
+.empty-products--enhanced p {
+  max-width: 620px;
+  line-height: 1.75;
+}
+
+.empty-products__icon {
+  display: inline-grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border-radius: 18px;
+  color: var(--pfl-primary);
+  background: var(--pfl-primary-soft);
+  font-size: 30px;
+  font-weight: 800;
+}
+
+.empty-products__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.empty-products__primary,
+.empty-products__secondary {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  border-radius: 11px;
+  font-weight: 700;
+}
+
+.empty-products__primary {
+  color: #fff;
+  background: var(--pfl-primary);
+}
+
+.empty-products__secondary {
+  border: 1px solid #d7dde8;
+  color: #465067;
+  background: #fff;
+}
+
+@media (max-width: 820px) {
+  .filter-state-bar {
+    grid-template-columns: 1fr;
+  }
+
+  #clearAllFilters {
+    width: fit-content;
+  }
+}
+
+@media (max-width: 760px) {
+  .product-navigation-context {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .filter-state-bar {
+    margin-left: -20px;
+    margin-right: -20px;
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .filter-row {
+    grid-template-columns: 1fr;
+    gap: 11px;
+    padding: 20px 0;
+  }
+
+  .filter-row__heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 0;
+  }
+}
+
+@media (max-width: 540px) {
+  .product-parent-link {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .filter-state-bar,
+  .selected-filter-tags {
+    width: 100%;
+  }
+
+  #clearAllFilters {
+    width: 100%;
+  }
+}
