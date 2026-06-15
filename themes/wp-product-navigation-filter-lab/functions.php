@@ -10,7 +10,8 @@
  * 5. 配置驱动的动态产品属性与 AJAX 无刷新筛选
  * 6. 分类专属筛选、继承、历史记录与分页状态同步
  * 7. 产品分类内容、Canonical、Robots 与结构化数据
- * 8. 演示数据导入器
+ * 8. 联动筛选计数、不可用选项与缓存失效机制
+ * 9. 演示数据导入器
  */
 
 if (! defined('ABSPATH')) {
@@ -97,8 +98,13 @@ function pfl_enqueue_assets(): void
                 'action'   => 'pfl_filter_products',
                 'nonce'    => wp_create_nonce('pfl_filter_products'),
                 'debounce' => 320,
+                'showPerformance' => (
+                    current_user_can('manage_options')
+                    && defined('WP_DEBUG')
+                    && WP_DEBUG
+                ),
                 'messages' => [
-                    'loading' => '正在更新产品结果……',
+                    'loading' => '正在更新产品结果与筛选计数……',
                     'error'   => 'AJAX 请求失败，正在切换为普通页面请求。',
                 ],
             ]
@@ -1054,6 +1060,504 @@ function pfl_range_filter_has_values(string $key, int $term_id = 0): bool
 
 
 /**
+ * 九、联动筛选计数与缓存。
+ *
+ * 计数规则：
+ * 1. 计算某一筛选组时，暂时排除该组自身条件；
+ * 2. 保留产品分类和其他筛选组条件；
+ * 3. taxonomy 的 IN 组显示选择该项后的结果数；
+ * 4. taxonomy 的 AND 组显示加入该项后同时满足全部条件的结果数；
+ * 5. range 组显示切换到该区间后的结果数；
+ * 6. 数量为 0 且未被选中的选项自动禁用。
+ */
+
+function pfl_get_facet_cache_version(): int
+{
+    $version = (int) get_option('pfl_facet_cache_version', 1);
+
+    if ($version < 1) {
+        $version = 1;
+        update_option('pfl_facet_cache_version', $version, false);
+    }
+
+    return $version;
+}
+
+
+function pfl_bump_facet_cache_version(): void
+{
+    update_option(
+        'pfl_facet_cache_version',
+        pfl_get_facet_cache_version() + 1,
+        false
+    );
+}
+
+
+function pfl_normalize_facet_source(
+    array $source,
+    array $active_keys
+): array {
+    $state = pfl_get_pagination_filter_args($source, $active_keys);
+    unset($state['sort']);
+
+    foreach ($state as &$value) {
+        if (is_array($value)) {
+            $value = array_values(array_unique(array_map('strval', $value)));
+            sort($value, SORT_NATURAL);
+        }
+    }
+    unset($value);
+
+    ksort($state);
+
+    return $state;
+}
+
+
+function pfl_get_facet_cache_key(
+    array $source,
+    int $term_id,
+    array $active_keys
+): string {
+    $payload = [
+        'version' => pfl_get_facet_cache_version(),
+        'term_id' => $term_id,
+        'keys'    => array_values($active_keys),
+        'state'   => pfl_normalize_facet_source($source, $active_keys),
+    ];
+
+    return 'pfl_facets_' . md5(wp_json_encode($payload));
+}
+
+
+/**
+ * 返回满足“当前分类 + 除指定组之外其他筛选条件”的产品 ID。
+ */
+function pfl_get_faceted_base_product_ids(
+    array $source,
+    int $term_id,
+    array $active_keys,
+    string $excluded_key
+): array {
+    $query_keys = array_values(
+        array_diff($active_keys, [$excluded_key])
+    );
+
+    $parts = pfl_get_product_query_parts($source, $query_keys);
+
+    $query_args = [
+        'post_type'              => 'product',
+        'post_status'            => 'publish',
+        'posts_per_page'         => -1,
+        'fields'                 => 'ids',
+        'no_found_rows'          => true,
+        'ignore_sticky_posts'    => true,
+        'orderby'                => 'ID',
+        'order'                  => 'ASC',
+        'update_post_meta_cache' => false,
+        'update_post_term_cache' => false,
+    ];
+
+    $tax_query = ['relation' => 'AND'];
+
+    if ($term_id > 0) {
+        $tax_query[] = [
+            'taxonomy'         => 'product_category',
+            'field'            => 'term_id',
+            'terms'            => [$term_id],
+            'include_children' => true,
+        ];
+    }
+
+    foreach ($parts['tax_clauses'] as $clause) {
+        $tax_query[] = $clause;
+    }
+
+    if (count($tax_query) > 1) {
+        $query_args['tax_query'] = $tax_query;
+    }
+
+    if (! empty($parts['meta_clauses'])) {
+        $query_args['meta_query'] = array_merge(
+            ['relation' => 'AND'],
+            $parts['meta_clauses']
+        );
+    }
+
+    return array_map('intval', get_posts($query_args));
+}
+
+
+/**
+ * 判断一个数值是否位于某个 range Schema 选项中。
+ */
+function pfl_numeric_value_matches_filter_option(
+    float $number,
+    array $option
+): bool {
+    $compare = (string) ($option['compare'] ?? '=');
+    $value   = $option['value'] ?? 0;
+
+    switch ($compare) {
+        case '<':
+            return $number < (float) $value;
+
+        case '<=':
+            return $number <= (float) $value;
+
+        case '>':
+            return $number > (float) $value;
+
+        case '>=':
+            return $number >= (float) $value;
+
+        case 'BETWEEN':
+            if (! is_array($value) || count($value) < 2) {
+                return false;
+            }
+
+            return (
+                $number >= (float) $value[0]
+                && $number <= (float) $value[1]
+            );
+
+        default:
+            return $number === (float) $value;
+    }
+}
+
+
+/**
+ * 计算当前筛选状态下所有可见筛选组的联动数量。
+ *
+ * 返回：
+ * [
+ *   'facets' => [
+ *      'brand' => [
+ *          'type' => 'taxonomy',
+ *          'options' => [
+ *              'term-slug' => ['count' => 3, 'disabled' => false]
+ *          ]
+ *      ]
+ *   ],
+ *   'meta' => [
+ *      'cacheHit' => false,
+ *      'elapsedMs' => 12.5
+ *   ]
+ * ]
+ */
+function pfl_get_faceted_filter_state(
+    array $source,
+    ?WP_Term $term = null,
+    ?array $active_keys = null
+): array {
+    static $runtime_cache = [];
+
+    $started     = microtime(true);
+    $term_id     = $term ? (int) $term->term_id : 0;
+    $active_keys = null === $active_keys
+        ? pfl_get_active_filter_keys($term)
+        : pfl_sanitize_filter_keys($active_keys);
+
+    $cache_key = pfl_get_facet_cache_key(
+        $source,
+        $term_id,
+        $active_keys
+    );
+
+    if (isset($runtime_cache[$cache_key])) {
+        return [
+            'facets' => $runtime_cache[$cache_key],
+            'meta'   => [
+                'cacheHit' => true,
+                'elapsedMs' => round((microtime(true) - $started) * 1000, 2),
+            ],
+        ];
+    }
+
+    $cached = get_transient($cache_key);
+
+    if (is_array($cached)) {
+        $runtime_cache[$cache_key] = $cached;
+
+        return [
+            'facets' => $cached,
+            'meta'   => [
+                'cacheHit' => true,
+                'elapsedMs' => round((microtime(true) - $started) * 1000, 2),
+            ],
+        ];
+    }
+
+    $schema = pfl_get_product_filter_schema();
+    $facets = [];
+
+    foreach ($active_keys as $key) {
+        if (! isset($schema[$key])) {
+            continue;
+        }
+
+        $filter   = $schema[$key];
+        $base_ids = pfl_get_faceted_base_product_ids(
+            $source,
+            $term_id,
+            $active_keys,
+            $key
+        );
+
+        if ('taxonomy' === $filter['type']) {
+            $context_options = pfl_get_filter_term_options($key, $term_id);
+
+            if (empty($context_options)) {
+                continue;
+            }
+
+            $object_ids_by_slug = [];
+
+            if (! empty($base_ids)) {
+                $relations = wp_get_object_terms(
+                    $base_ids,
+                    $filter['taxonomy'],
+                    ['fields' => 'all_with_object_id']
+                );
+
+                if (! is_wp_error($relations)) {
+                    foreach ($relations as $relation) {
+                        $slug = (string) $relation->slug;
+                        $object_ids_by_slug[$slug][] = (int) $relation->object_id;
+                    }
+                }
+            }
+
+            foreach ($object_ids_by_slug as &$ids) {
+                $ids = array_values(array_unique(array_map('intval', $ids)));
+            }
+            unset($ids);
+
+            $selected = pfl_get_filter_values(
+                $key,
+                $source,
+                $active_keys
+            );
+
+            $facet_options = [];
+
+            foreach ($context_options as $context_option) {
+                $option_term = $context_option['term'];
+                $slug        = (string) $option_term->slug;
+                $count       = 0;
+
+                if ('AND' === strtoupper((string) $filter['operator'])) {
+                    $required = $selected;
+
+                    if (! in_array($slug, $required, true)) {
+                        $required[] = $slug;
+                    }
+
+                    $matching_ids = $base_ids;
+
+                    foreach ($required as $required_slug) {
+                        $matching_ids = array_values(
+                            array_intersect(
+                                $matching_ids,
+                                $object_ids_by_slug[$required_slug] ?? []
+                            )
+                        );
+
+                        if (empty($matching_ids)) {
+                            break;
+                        }
+                    }
+
+                    $count = count($matching_ids);
+                } else {
+                    $count = count($object_ids_by_slug[$slug] ?? []);
+                }
+
+                $is_selected = in_array($slug, $selected, true);
+
+                $facet_options[$slug] = [
+                    'count'    => $count,
+                    'disabled' => (0 === $count && ! $is_selected),
+                ];
+            }
+
+            $facets[$key] = [
+                'type'    => 'taxonomy',
+                'options' => $facet_options,
+            ];
+        } elseif ('range' === $filter['type']) {
+            if (! pfl_range_filter_has_values($key, $term_id)) {
+                continue;
+            }
+
+            $selected = pfl_get_filter_value(
+                $key,
+                $source,
+                $active_keys
+            );
+
+            if (! empty($base_ids)) {
+                update_meta_cache('post', $base_ids);
+            }
+
+            $facet_options = [];
+
+            foreach ($filter['options'] as $value => $option) {
+                $count = 0;
+
+                foreach ($base_ids as $post_id) {
+                    $raw_value = get_post_meta(
+                        $post_id,
+                        $filter['meta_key'],
+                        true
+                    );
+
+                    if (
+                        '' !== $raw_value
+                        && is_numeric($raw_value)
+                        && pfl_numeric_value_matches_filter_option(
+                            (float) $raw_value,
+                            $option
+                        )
+                    ) {
+                        $count++;
+                    }
+                }
+
+                $is_selected = ($selected === $value);
+
+                $facet_options[$value] = [
+                    'count'    => $count,
+                    'disabled' => (0 === $count && ! $is_selected),
+                ];
+            }
+
+            $facets[$key] = [
+                'type'    => 'range',
+                'options' => $facet_options,
+            ];
+        }
+    }
+
+    set_transient(
+        $cache_key,
+        $facets,
+        10 * MINUTE_IN_SECONDS
+    );
+
+    $runtime_cache[$cache_key] = $facets;
+
+    return [
+        'facets' => $facets,
+        'meta'   => [
+            'cacheHit' => false,
+            'elapsedMs' => round((microtime(true) - $started) * 1000, 2),
+        ],
+    ];
+}
+
+
+/**
+ * 产品、产品属性和产品分类变化后提升缓存版本。
+ *
+ * 使用版本号而不是遍历删除所有 transient，可以避免昂贵的数据库扫描。
+ */
+function pfl_clear_facets_after_product_save(int $post_id): void
+{
+    if (
+        wp_is_post_revision($post_id)
+        || wp_is_post_autosave($post_id)
+        || 'product' !== get_post_type($post_id)
+    ) {
+        return;
+    }
+
+    pfl_bump_facet_cache_version();
+}
+add_action('save_post_product', 'pfl_clear_facets_after_product_save', 100);
+
+
+function pfl_clear_facets_after_term_assignment(
+    int $object_id,
+    $terms,
+    array $tt_ids,
+    string $taxonomy
+): void {
+    if ('product' !== get_post_type($object_id)) {
+        return;
+    }
+
+    $relevant_taxonomies = array_merge(
+        ['product_category'],
+        array_values(
+            array_map(
+                static function (array $filter): string {
+                    return (string) ($filter['taxonomy'] ?? '');
+                },
+                pfl_get_taxonomy_filter_config()
+            )
+        )
+    );
+
+    if (in_array($taxonomy, $relevant_taxonomies, true)) {
+        pfl_bump_facet_cache_version();
+    }
+}
+add_action(
+    'set_object_terms',
+    'pfl_clear_facets_after_term_assignment',
+    100,
+    4
+);
+
+
+function pfl_get_relevant_product_taxonomies(): array
+{
+    return array_values(
+        array_unique(
+            array_merge(
+                ['product_category'],
+                array_map(
+                    static function (array $filter): string {
+                        return (string) ($filter['taxonomy'] ?? '');
+                    },
+                    pfl_get_taxonomy_filter_config()
+                )
+            )
+        )
+    );
+}
+
+
+function pfl_clear_facets_after_term_change(
+    int $term_id,
+    int $tt_id = 0,
+    string $taxonomy = ''
+): void {
+    if (in_array($taxonomy, pfl_get_relevant_product_taxonomies(), true)) {
+        pfl_bump_facet_cache_version();
+    }
+}
+add_action('created_term', 'pfl_clear_facets_after_term_change', 100, 3);
+add_action('edited_term', 'pfl_clear_facets_after_term_change', 100, 3);
+add_action('delete_term', 'pfl_clear_facets_after_term_change', 100, 3);
+
+
+function pfl_clear_facets_after_product_delete(int $post_id): void
+{
+    if ('product' === get_post_type($post_id)) {
+        pfl_bump_facet_cache_version();
+    }
+}
+add_action('before_delete_post', 'pfl_clear_facets_after_product_delete', 100);
+add_action('trashed_post', 'pfl_clear_facets_after_product_delete', 100);
+add_action('untrashed_post', 'pfl_clear_facets_after_product_delete', 100);
+
+
+
+/**
  * 八、取得分类法允许使用的 term slug 白名单。
  */
 function pfl_get_allowed_taxonomy_slugs(string $taxonomy): array
@@ -1804,6 +2308,11 @@ function pfl_ajax_filter_products(): void
     $product_query = new WP_Query($query_args);
     $base_url = pfl_get_product_context_url($context, $term_id);
     $state_url = pfl_build_product_state_url($base_url, $source, $paged, $active_keys);
+    $facet_state = pfl_get_faceted_filter_state(
+        $source,
+        $term,
+        $active_keys
+    );
 
     nocache_headers();
     wp_send_json_success([
@@ -1812,8 +2321,13 @@ function pfl_ajax_filter_products(): void
         'maxPages' => (int) $product_query->max_num_pages,
         'currentPage' => $paged,
         'appliedCount' => pfl_get_applied_filter_count($source, $active_keys),
+        'facets' => $facet_state['facets'],
+        'facetMeta' => $facet_state['meta'],
         'url' => $state_url,
-        'announcement' => sprintf('筛选完成，共找到 %d 个产品。', (int) $product_query->found_posts),
+        'announcement' => sprintf(
+            '筛选完成，共找到 %d 个产品，筛选项数量已经同步更新。',
+            (int) $product_query->found_posts
+        ),
     ]);
 }
 add_action('wp_ajax_pfl_filter_products', 'pfl_ajax_filter_products');

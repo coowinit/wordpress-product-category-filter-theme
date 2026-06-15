@@ -22,6 +22,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const selectedTags = document.getElementById("selectedFilterTags");
   const stateTitle = document.getElementById("filterStateTitle");
   const stateHint = document.getElementById("filterStateHint");
+  const performanceElement = document.getElementById("filterPerformance");
   const clearAllButton = document.getElementById("clearAllFilters");
   const applyButton = document.getElementById("applyFilterButton");
   const sortSelect = form.querySelector("select[data-filter-sort]");
@@ -140,6 +141,10 @@ document.addEventListener("DOMContentLoaded", () => {
     filterInputs.forEach((input) => {
       const values = getValuesForInputFromUrl(input, url);
       input.checked = values.includes(input.value);
+
+      if (input.checked) {
+        input.disabled = false;
+      }
     });
 
     if (sortSelect) {
@@ -152,7 +157,17 @@ document.addEventListener("DOMContentLoaded", () => {
   function refreshOptionClasses() {
     form.querySelectorAll(".filter-option").forEach((label) => {
       const input = label.querySelector("input");
-      label.classList.toggle("is-selected", Boolean(input && input.checked));
+      const selected = Boolean(input && input.checked);
+      const disabled = Boolean(input && input.disabled && !selected);
+
+      label.classList.toggle("is-selected", selected);
+      label.classList.toggle("is-disabled", disabled);
+
+      if (disabled) {
+        label.setAttribute("aria-disabled", "true");
+      } else {
+        label.removeAttribute("aria-disabled");
+      }
     });
   }
 
@@ -281,6 +296,10 @@ document.addEventListener("DOMContentLoaded", () => {
       results.setAttribute("aria-busy", loading ? "true" : "false");
     }
 
+    if (panel) {
+      panel.classList.toggle("is-counting-facets", loading);
+    }
+
     renderStateMessage();
   }
 
@@ -302,6 +321,64 @@ document.addEventListener("DOMContentLoaded", () => {
     if (countElement) {
       countElement.textContent = String(count);
     }
+  }
+
+
+  function updateFacetState(facets) {
+    if (!facets || typeof facets !== "object") {
+      return;
+    }
+
+    filterInputs.forEach((input) => {
+      const key = input.dataset.filterKey;
+      const value = input.dataset.optionValue;
+
+      if (
+        !key
+        || !value
+        || !facets[key]
+        || !facets[key].options
+        || !facets[key].options[value]
+      ) {
+        return;
+      }
+
+      const optionState = facets[key].options[value];
+      const count = Number.parseInt(optionState.count, 10);
+      const selected = input.checked;
+      const disabled = Boolean(optionState.disabled) && !selected;
+      const label = input.closest(".filter-option");
+      const countElementForOption = label
+        ? label.querySelector("[data-filter-count]")
+        : null;
+
+      input.disabled = disabled;
+
+      if (countElementForOption) {
+        countElementForOption.textContent = Number.isFinite(count)
+          ? String(count)
+          : "0";
+      }
+    });
+
+    refreshOptionClasses();
+  }
+
+  function updatePerformance(meta) {
+    if (
+      !performanceElement
+      || !config
+      || !config.showPerformance
+      || !meta
+    ) {
+      return;
+    }
+
+    const elapsed = Number(meta.elapsedMs || 0).toFixed(2);
+    const source = meta.cacheHit ? "缓存命中" : "实时计算";
+
+    performanceElement.hidden = false;
+    performanceElement.textContent = `${source} · ${elapsed} ms`;
   }
 
   async function requestProducts({
@@ -364,6 +441,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       replaceResults(payload.data.html);
       updateResultCount(payload.data.foundPosts);
+      updateFacetState(payload.data.facets);
+      updatePerformance(payload.data.facetMeta);
 
       appliedState = serializeState();
 

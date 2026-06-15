@@ -17,6 +17,12 @@ $context = $current_term ? 'taxonomy' : 'archive';
 $base_action = pfl_get_product_filter_action();
 $form_action = $base_action . '#product-results';
 $visible_group_count = 0;
+$facet_state = pfl_get_faceted_filter_state(
+    $_GET,
+    $current_term,
+    $active_filter_keys
+);
+$facets = $facet_state['facets'];
 ?>
 
 <section id="product-filter-panel" class="product-filter-panel">
@@ -25,6 +31,7 @@ $visible_group_count = 0;
             <div class="product-filter-panel__title-row">
                 <h2>动态产品属性筛选</h2>
                 <span class="ajax-filter-badge" aria-hidden="true">AJAX 自动更新</span>
+                <span class="facet-count-badge" aria-hidden="true">联动计数</span>
                 <span class="filter-profile-badge">
                     <?php echo esc_html($profile['source_label']); ?>
                 </span>
@@ -54,7 +61,13 @@ $visible_group_count = 0;
                         ? esc_html('当前已应用 ' . $applied_count . ' 个筛选条件')
                         : '当前未应用筛选条件'; ?>
                 </strong>
-                <span id="filterStateHint">结果与地址栏参数保持同步，可刷新、复制或使用浏览器前进后退。</span>
+                <span id="filterStateHint">结果、地址栏和筛选项数量保持同步；数量表示该选项在其他当前条件下可匹配的产品数。</span>
+                <span
+                    id="filterPerformance"
+                    class="filter-performance"
+                    hidden
+                    aria-live="polite"
+                ></span>
             </div>
             <div id="selectedFilterTags" class="selected-filter-tags"></div>
             <button id="clearAllFilters" type="button">清空全部</button>
@@ -84,19 +97,42 @@ $visible_group_count = 0;
                             $term = $option['term'];
                             $input_id = 'filter-' . $key . '-' . $term->term_id;
                             $is_selected = in_array($term->slug, $selected_values, true);
+                            $facet_option = $facets[$key]['options'][$term->slug] ?? [
+                                'count' => 0,
+                                'disabled' => ! $is_selected,
+                            ];
+                            $is_disabled = (
+                                ! $is_selected
+                                && ! empty($facet_option['disabled'])
+                            );
                             ?>
-                            <label class="filter-option<?php echo $is_selected ? ' is-selected' : ''; ?>" for="<?php echo esc_attr($input_id); ?>">
+                            <label
+                                class="filter-option<?php
+                                echo $is_selected ? ' is-selected' : '';
+                                echo $is_disabled ? ' is-disabled' : '';
+                                ?>"
+                                for="<?php echo esc_attr($input_id); ?>"
+                                <?php if ($is_disabled) : ?>
+                                    aria-disabled="true"
+                                <?php endif; ?>
+                            >
                                 <input
                                     id="<?php echo esc_attr($input_id); ?>"
                                     name="<?php echo esc_attr($key); ?>[]"
                                     type="checkbox"
                                     value="<?php echo esc_attr($term->slug); ?>"
+                                    data-filter-key="<?php echo esc_attr($key); ?>"
+                                    data-option-value="<?php echo esc_attr($term->slug); ?>"
                                     data-filter-label="<?php echo esc_attr($filter['label']); ?>"
                                     data-option-label="<?php echo esc_attr($term->name); ?>"
                                     <?php checked($is_selected); ?>
+                                    <?php disabled($is_disabled); ?>
                                 >
                                 <span><?php echo esc_html($term->name); ?></span>
-                                <small class="filter-option__count"><?php echo esc_html((string) $option['count']); ?></small>
+                                <small
+                                    class="filter-option__count"
+                                    data-filter-count
+                                ><?php echo esc_html((string) $facet_option['count']); ?></small>
                             </label>
                         <?php endforeach; ?>
                     </div>
@@ -114,18 +150,45 @@ $visible_group_count = 0;
                     </div>
                     <div class="filter-options" role="radiogroup" aria-label="<?php echo esc_attr($filter['label']); ?>">
                         <?php foreach ($filter['options'] as $value => $option) : ?>
-                            <?php $input_id = $key . '-' . $value; $is_selected = $selected_value === $value; ?>
-                            <label class="filter-option<?php echo $is_selected ? ' is-selected' : ''; ?>" for="<?php echo esc_attr($input_id); ?>">
+                            <?php
+                            $input_id = $key . '-' . $value;
+                            $is_selected = $selected_value === $value;
+                            $facet_option = $facets[$key]['options'][$value] ?? [
+                                'count' => 0,
+                                'disabled' => ! $is_selected,
+                            ];
+                            $is_disabled = (
+                                ! $is_selected
+                                && ! empty($facet_option['disabled'])
+                            );
+                            ?>
+                            <label
+                                class="filter-option<?php
+                                echo $is_selected ? ' is-selected' : '';
+                                echo $is_disabled ? ' is-disabled' : '';
+                                ?>"
+                                for="<?php echo esc_attr($input_id); ?>"
+                                <?php if ($is_disabled) : ?>
+                                    aria-disabled="true"
+                                <?php endif; ?>
+                            >
                                 <input
                                     id="<?php echo esc_attr($input_id); ?>"
                                     name="<?php echo esc_attr($key); ?>"
                                     type="radio"
                                     value="<?php echo esc_attr($value); ?>"
+                                    data-filter-key="<?php echo esc_attr($key); ?>"
+                                    data-option-value="<?php echo esc_attr($value); ?>"
                                     data-filter-label="<?php echo esc_attr($filter['label']); ?>"
                                     data-option-label="<?php echo esc_attr($option['label']); ?>"
                                     <?php checked($is_selected); ?>
+                                    <?php disabled($is_disabled); ?>
                                 >
                                 <span><?php echo esc_html($option['label']); ?></span>
+                                <small
+                                    class="filter-option__count"
+                                    data-filter-count
+                                ><?php echo esc_html((string) $facet_option['count']); ?></small>
                             </label>
                         <?php endforeach; ?>
                     </div>
