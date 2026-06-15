@@ -1,10 +1,23 @@
 <?php
 /**
  * 产品无结果状态。
+ *
+ * @var array  $args['source']
+ * @var string $args['base_url']
  */
 
-$has_filters = pfl_has_active_product_filters();
-$reset_url   = pfl_get_product_filter_action();
+$source = (
+    isset($args['source'])
+    && is_array($args['source'])
+)
+    ? $args['source']
+    : $_GET;
+
+$reset_url = isset($args['base_url'])
+    ? (string) $args['base_url']
+    : pfl_get_product_filter_action();
+
+$has_filters = pfl_has_active_product_filters($source);
 $archive_url = get_post_type_archive_link('product');
 ?>
 
@@ -25,7 +38,11 @@ $archive_url = get_post_type_archive_link('product');
 
     <div class="empty-products__actions">
         <?php if ($has_filters) : ?>
-            <a class="empty-products__primary" href="<?php echo esc_url($reset_url); ?>">
+            <a
+                class="empty-products__primary"
+                href="<?php echo esc_url($reset_url); ?>"
+                data-filter-reset
+            >
                 清空当前筛选
             </a>
         <?php endif; ?>

@@ -7,8 +7,9 @@
  * 2. 产品层级分类 product_category
  * 3. 品牌、电压、功能分类法
  * 4. 产品价格、功率、型号自定义字段
- * 5. GET 多条件筛选
- * 6. 演示数据导入器
+ * 5. GET 多条件筛选与 AJAX 无刷新筛选
+ * 6. 浏览器历史记录与分页状态同步
+ * 7. 演示数据导入器
  */
 
 if (! defined('ABSPATH')) {
@@ -57,25 +58,49 @@ function pfl_enqueue_assets(): void
         wp_get_theme()->get('Version')
     );
 
-    if (
+    $is_product_screen = (
         is_post_type_archive('product')
         || is_tax('product_category')
         || is_singular('product')
         || is_front_page()
-    ) {
-        wp_enqueue_style(
-            'pfl-product',
-            get_theme_file_uri('/assets/css/product.css'),
-            ['pfl-style'],
-            wp_get_theme()->get('Version')
-        );
+    );
 
-        wp_enqueue_script(
+    if (! $is_product_screen) {
+        return;
+    }
+
+    wp_enqueue_style(
+        'pfl-product',
+        get_theme_file_uri('/assets/css/product.css'),
+        ['pfl-style'],
+        wp_get_theme()->get('Version')
+    );
+
+    wp_enqueue_script(
+        'pfl-product-filter',
+        get_theme_file_uri('/assets/js/product-filter.js'),
+        [],
+        wp_get_theme()->get('Version'),
+        true
+    );
+
+    if (
+        is_post_type_archive('product')
+        || is_tax('product_category')
+    ) {
+        wp_localize_script(
             'pfl-product-filter',
-            get_theme_file_uri('/assets/js/product-filter.js'),
-            [],
-            wp_get_theme()->get('Version'),
-            true
+            'pflProductFilter',
+            [
+                'ajaxUrl'  => admin_url('admin-ajax.php'),
+                'action'   => 'pfl_filter_products',
+                'nonce'    => wp_create_nonce('pfl_filter_products'),
+                'debounce' => 320,
+                'messages' => [
+                    'loading' => '正在更新产品结果……',
+                    'error'   => 'AJAX 请求失败，正在切换为普通页面请求。',
+                ],
+            ]
         );
     }
 }
@@ -532,15 +557,18 @@ function pfl_get_allowed_taxonomy_slugs(string $taxonomy): array
 /**
  * 九、读取并验证 GET 数组参数。
  */
-function pfl_get_filter_values(string $key): array
-{
+function pfl_get_filter_values(
+    string $key,
+    ?array $source = null
+): array {
     $config = pfl_get_taxonomy_filter_config();
+    $source = null === $source ? $_GET : $source;
 
-    if (! isset($config[$key]) || ! isset($_GET[$key])) {
+    if (! isset($config[$key]) || ! isset($source[$key])) {
         return [];
     }
 
-    $values = (array) wp_unslash($_GET[$key]);
+    $values = (array) wp_unslash($source[$key]);
     $values = array_map('sanitize_title', $values);
     $values = array_values(array_unique(array_filter($values)));
     $values = array_slice($values, 0, 20);
@@ -556,13 +584,17 @@ function pfl_get_filter_values(string $key): array
 /**
  * 十、读取并验证 GET 单值参数。
  */
-function pfl_get_filter_value(string $key): string
-{
-    if (! isset($_GET[$key]) || is_array($_GET[$key])) {
+function pfl_get_filter_value(
+    string $key,
+    ?array $source = null
+): string {
+    $source = null === $source ? $_GET : $source;
+
+    if (! isset($source[$key]) || is_array($source[$key])) {
         return '';
     }
 
-    $value = sanitize_key(wp_unslash($_GET[$key]));
+    $value = sanitize_key(wp_unslash($source[$key]));
     $range_config = pfl_get_range_filter_config();
 
     if (isset($range_config[$key])) {
@@ -586,16 +618,16 @@ function pfl_get_filter_value(string $key): string
 /**
  * 十一、统计当前已经应用的筛选条件数量。
  */
-function pfl_get_applied_filter_count(): int
+function pfl_get_applied_filter_count(?array $source = null): int
 {
     $count = 0;
 
     foreach (array_keys(pfl_get_taxonomy_filter_config()) as $key) {
-        $count += count(pfl_get_filter_values($key));
+        $count += count(pfl_get_filter_values($key, $source));
     }
 
     foreach (array_keys(pfl_get_range_filter_config()) as $key) {
-        if (pfl_get_filter_value($key)) {
+        if (pfl_get_filter_value($key, $source)) {
             $count++;
         }
     }
@@ -604,17 +636,140 @@ function pfl_get_applied_filter_count(): int
 }
 
 
-function pfl_has_active_product_filters(): bool
+function pfl_has_active_product_filters(?array $source = null): bool
 {
-    return pfl_get_applied_filter_count() > 0;
+    return pfl_get_applied_filter_count($source) > 0;
 }
 
 
 /**
- * 十二、使用 pre_get_posts 修改产品主查询。
+ * 十二、根据筛选来源生成通用查询片段。
  *
- * 分类页面原本已经包含 product_category 条件。
- * 这里继续追加品牌、电压、功能、价格、功率和排序条件。
+ * 普通 GET 请求和 AJAX 请求共用此函数，避免两套查询规则逐渐不一致。
+ */
+function pfl_get_product_query_parts(array $source): array
+{
+    $tax_clauses  = [];
+    $meta_clauses = [];
+
+    foreach (pfl_get_taxonomy_filter_config() as $key => $filter) {
+        $values = pfl_get_filter_values($key, $source);
+
+        if (empty($values)) {
+            continue;
+        }
+
+        $tax_clauses[] = [
+            'taxonomy' => $filter['taxonomy'],
+            'field'    => 'slug',
+            'terms'    => $values,
+            'operator' => $filter['operator'],
+        ];
+    }
+
+    foreach (pfl_get_range_filter_config() as $key => $filter) {
+        $selected = pfl_get_filter_value($key, $source);
+
+        if (! $selected || ! isset($filter['options'][$selected])) {
+            continue;
+        }
+
+        $option = $filter['options'][$selected];
+
+        $meta_clauses[] = [
+            'key'     => $filter['meta_key'],
+            'value'   => $option['value'],
+            'type'    => 'NUMERIC',
+            'compare' => $option['compare'],
+        ];
+    }
+
+    $sort = pfl_get_filter_value('sort', $source);
+    $sort_args = [
+        'orderby' => 'date',
+        'order'   => 'DESC',
+    ];
+
+    switch ($sort) {
+        case 'price-asc':
+            $sort_args = [
+                'meta_key' => 'product_price',
+                'orderby'  => 'meta_value_num',
+                'order'    => 'ASC',
+            ];
+            break;
+
+        case 'price-desc':
+            $sort_args = [
+                'meta_key' => 'product_price',
+                'orderby'  => 'meta_value_num',
+                'order'    => 'DESC',
+            ];
+            break;
+
+        case 'title':
+            $sort_args = [
+                'orderby' => 'title',
+                'order'   => 'ASC',
+            ];
+            break;
+    }
+
+    return [
+        'tax_clauses'  => $tax_clauses,
+        'meta_clauses' => $meta_clauses,
+        'sort_args'    => $sort_args,
+    ];
+}
+
+
+/**
+ * 将筛选片段应用到一个 WP_Query 对象。
+ */
+function pfl_apply_product_query_parts(
+    WP_Query $query,
+    array $source
+): void {
+    $parts = pfl_get_product_query_parts($source);
+
+    if (! empty($parts['tax_clauses'])) {
+        $tax_query = (array) $query->get('tax_query');
+
+        if (! isset($tax_query['relation'])) {
+            $tax_query['relation'] = 'AND';
+        }
+
+        foreach ($parts['tax_clauses'] as $clause) {
+            $tax_query[] = $clause;
+        }
+
+        $query->set('tax_query', $tax_query);
+    }
+
+    if (! empty($parts['meta_clauses'])) {
+        $meta_query = (array) $query->get('meta_query');
+
+        if (! isset($meta_query['relation'])) {
+            $meta_query['relation'] = 'AND';
+        }
+
+        foreach ($parts['meta_clauses'] as $clause) {
+            $meta_query[] = $clause;
+        }
+
+        $query->set('meta_query', $meta_query);
+    }
+
+    foreach ($parts['sort_args'] as $key => $value) {
+        $query->set($key, $value);
+    }
+}
+
+
+/**
+ * 使用 pre_get_posts 修改产品主查询。
+ *
+ * 分类页面原本已经带有 product_category 条件；这里只追加筛选条件。
  */
 function pfl_filter_product_main_query(WP_Query $query): void
 {
@@ -632,87 +787,7 @@ function pfl_filter_product_main_query(WP_Query $query): void
     $query->set('post_type', 'product');
     $query->set('posts_per_page', 9);
 
-    $tax_query = (array) $query->get('tax_query');
-    $has_tax_filters = false;
-
-    foreach (pfl_get_taxonomy_filter_config() as $key => $filter) {
-        $values = pfl_get_filter_values($key);
-
-        if (empty($values)) {
-            continue;
-        }
-
-        $tax_query[] = [
-            'taxonomy' => $filter['taxonomy'],
-            'field'    => 'slug',
-            'terms'    => $values,
-            'operator' => $filter['operator'],
-        ];
-
-        $has_tax_filters = true;
-    }
-
-    if ($has_tax_filters) {
-        if (! isset($tax_query['relation'])) {
-            $tax_query['relation'] = 'AND';
-        }
-
-        $query->set('tax_query', $tax_query);
-    }
-
-    $meta_query = (array) $query->get('meta_query');
-    $has_meta_filters = false;
-
-    foreach (pfl_get_range_filter_config() as $key => $filter) {
-        $selected = pfl_get_filter_value($key);
-
-        if (! $selected || ! isset($filter['options'][$selected])) {
-            continue;
-        }
-
-        $option = $filter['options'][$selected];
-
-        $meta_query[] = [
-            'key'     => $filter['meta_key'],
-            'value'   => $option['value'],
-            'type'    => 'NUMERIC',
-            'compare' => $option['compare'],
-        ];
-
-        $has_meta_filters = true;
-    }
-
-    if ($has_meta_filters) {
-        if (! isset($meta_query['relation'])) {
-            $meta_query['relation'] = 'AND';
-        }
-
-        $query->set('meta_query', $meta_query);
-    }
-
-    switch (pfl_get_filter_value('sort')) {
-        case 'price-asc':
-            $query->set('meta_key', 'product_price');
-            $query->set('orderby', 'meta_value_num');
-            $query->set('order', 'ASC');
-            break;
-
-        case 'price-desc':
-            $query->set('meta_key', 'product_price');
-            $query->set('orderby', 'meta_value_num');
-            $query->set('order', 'DESC');
-            break;
-
-        case 'title':
-            $query->set('orderby', 'title');
-            $query->set('order', 'ASC');
-            break;
-
-        default:
-            $query->set('orderby', 'date');
-            $query->set('order', 'DESC');
-            break;
-    }
+    pfl_apply_product_query_parts($query, $_GET);
 }
 add_action('pre_get_posts', 'pfl_filter_product_main_query');
 
@@ -986,12 +1061,14 @@ function pfl_get_product_filter_action(): string
 /**
  * 十六、获取筛选分页需要保留的、已经通过白名单验证的参数。
  */
-function pfl_get_pagination_filter_args(): array
-{
+function pfl_get_pagination_filter_args(
+    ?array $source = null
+): array {
+    $source = null === $source ? $_GET : $source;
     $args = [];
 
     foreach (array_keys(pfl_get_taxonomy_filter_config()) as $key) {
-        $values = pfl_get_filter_values($key);
+        $values = pfl_get_filter_values($key, $source);
 
         if (! empty($values)) {
             $args[$key] = $values;
@@ -999,14 +1076,14 @@ function pfl_get_pagination_filter_args(): array
     }
 
     foreach (array_keys(pfl_get_range_filter_config()) as $key) {
-        $value = pfl_get_filter_value($key);
+        $value = pfl_get_filter_value($key, $source);
 
         if ($value) {
             $args[$key] = $value;
         }
     }
 
-    $sort = pfl_get_filter_value('sort');
+    $sort = pfl_get_filter_value('sort', $source);
 
     if ($sort) {
         $args['sort'] = $sort;
@@ -1014,6 +1091,310 @@ function pfl_get_pagination_filter_args(): array
 
     return $args;
 }
+
+
+
+/**
+ * 十七、获得产品筛选上下文的基础地址。
+ */
+function pfl_get_product_context_url(
+    string $context = 'archive',
+    int $term_id = 0
+): string {
+    if ('taxonomy' === $context && $term_id > 0) {
+        $term = get_term($term_id, 'product_category');
+
+        if ($term instanceof WP_Term) {
+            $url = get_term_link($term);
+
+            if (! is_wp_error($url)) {
+                return $url;
+            }
+        }
+    }
+
+    $archive_url = get_post_type_archive_link('product');
+
+    return $archive_url ?: home_url('/');
+}
+
+
+/**
+ * 生成可以复制、刷新和前进后退的筛选状态 URL。
+ */
+function pfl_build_product_state_url(
+    string $base_url,
+    array $source,
+    int $paged = 1
+): string {
+    $args = pfl_get_pagination_filter_args($source);
+
+    if ($paged > 1) {
+        $args['paged'] = $paged;
+    }
+
+    return empty($args)
+        ? $base_url
+        : add_query_arg($args, $base_url);
+}
+
+
+/**
+ * 生成带 data-page 的产品分页，供普通链接和 AJAX 共用。
+ */
+function pfl_get_product_pagination_html(
+    WP_Query $query,
+    string $base_url,
+    array $source
+): string {
+    $total   = max(1, (int) $query->max_num_pages);
+    $current = max(1, (int) $query->get('paged'));
+
+    if ($total <= 1) {
+        return '';
+    }
+
+    $pages = [];
+
+    if ($total <= 7) {
+        $pages = range(1, $total);
+    } else {
+        $pages[] = 1;
+
+        $start = max(2, $current - 1);
+        $end   = min($total - 1, $current + 1);
+
+        if ($start > 2) {
+            $pages[] = 'dots';
+        }
+
+        for ($page = $start; $page <= $end; $page++) {
+            $pages[] = $page;
+        }
+
+        if ($end < $total - 1) {
+            $pages[] = 'dots';
+        }
+
+        $pages[] = $total;
+    }
+
+    ob_start();
+    ?>
+    <nav class="product-pagination" aria-label="产品分页">
+        <ul class="page-numbers">
+            <?php if ($current > 1) : ?>
+                <li>
+                    <a
+                        class="page-numbers prev"
+                        href="<?php echo esc_url(
+                            pfl_build_product_state_url(
+                                $base_url,
+                                $source,
+                                $current - 1
+                            )
+                        ); ?>"
+                        data-product-page="<?php echo esc_attr((string) ($current - 1)); ?>"
+                    >
+                        上一页
+                    </a>
+                </li>
+            <?php endif; ?>
+
+            <?php foreach ($pages as $page) : ?>
+                <?php if ('dots' === $page) : ?>
+                    <li>
+                        <span class="page-numbers dots" aria-hidden="true">…</span>
+                    </li>
+                <?php elseif ((int) $page === $current) : ?>
+                    <li>
+                        <span class="page-numbers current" aria-current="page">
+                            <?php echo esc_html((string) $page); ?>
+                        </span>
+                    </li>
+                <?php else : ?>
+                    <li>
+                        <a
+                            class="page-numbers"
+                            href="<?php echo esc_url(
+                                pfl_build_product_state_url(
+                                    $base_url,
+                                    $source,
+                                    (int) $page
+                                )
+                            ); ?>"
+                            data-product-page="<?php echo esc_attr((string) $page); ?>"
+                        >
+                            <?php echo esc_html((string) $page); ?>
+                        </a>
+                    </li>
+                <?php endif; ?>
+            <?php endforeach; ?>
+
+            <?php if ($current < $total) : ?>
+                <li>
+                    <a
+                        class="page-numbers next"
+                        href="<?php echo esc_url(
+                            pfl_build_product_state_url(
+                                $base_url,
+                                $source,
+                                $current + 1
+                            )
+                        ); ?>"
+                        data-product-page="<?php echo esc_attr((string) ($current + 1)); ?>"
+                    >
+                        下一页
+                    </a>
+                </li>
+            <?php endif; ?>
+        </ul>
+    </nav>
+    <?php
+
+    return (string) ob_get_clean();
+}
+
+
+/**
+ * 渲染产品结果区，普通页面和 AJAX 返回共用同一模板。
+ */
+function pfl_render_product_results_html(
+    WP_Query $query,
+    string $context,
+    string $base_url,
+    array $source
+): string {
+    ob_start();
+
+    get_template_part(
+        'template-parts/product/results',
+        null,
+        [
+            'query'    => $query,
+            'context'  => $context,
+            'base_url' => $base_url,
+            'source'   => $source,
+        ]
+    );
+
+    wp_reset_postdata();
+
+    return (string) ob_get_clean();
+}
+
+
+/**
+ * AJAX：根据当前筛选条件返回产品列表、数量和分页。
+ */
+function pfl_ajax_filter_products(): void
+{
+    check_ajax_referer('pfl_filter_products', 'nonce');
+
+    $query_string = isset($_POST['query'])
+        ? (string) wp_unslash($_POST['query'])
+        : '';
+
+    $source = [];
+    parse_str($query_string, $source);
+
+    $context = isset($_POST['context'])
+        ? sanitize_key(wp_unslash($_POST['context']))
+        : 'archive';
+
+    if (! in_array($context, ['archive', 'taxonomy'], true)) {
+        $context = 'archive';
+    }
+
+    $term_id = isset($_POST['term_id'])
+        ? absint($_POST['term_id'])
+        : 0;
+
+    if ('taxonomy' === $context) {
+        $term = get_term($term_id, 'product_category');
+
+        if (! ($term instanceof WP_Term)) {
+            $context = 'archive';
+            $term_id = 0;
+        }
+    }
+
+    $paged = isset($_POST['paged'])
+        ? max(1, absint($_POST['paged']))
+        : 1;
+
+    $query_args = [
+        'post_type'           => 'product',
+        'post_status'         => 'publish',
+        'posts_per_page'      => 9,
+        'paged'               => $paged,
+        'ignore_sticky_posts' => true,
+    ];
+
+    $parts = pfl_get_product_query_parts($source);
+    $tax_query = ['relation' => 'AND'];
+
+    if ('taxonomy' === $context && $term_id > 0) {
+        $tax_query[] = [
+            'taxonomy'         => 'product_category',
+            'field'            => 'term_id',
+            'terms'            => [$term_id],
+            'include_children' => true,
+        ];
+    }
+
+    foreach ($parts['tax_clauses'] as $clause) {
+        $tax_query[] = $clause;
+    }
+
+    if (count($tax_query) > 1) {
+        $query_args['tax_query'] = $tax_query;
+    }
+
+    if (! empty($parts['meta_clauses'])) {
+        $query_args['meta_query'] = array_merge(
+            ['relation' => 'AND'],
+            $parts['meta_clauses']
+        );
+    }
+
+    $query_args = array_merge(
+        $query_args,
+        $parts['sort_args']
+    );
+
+    $product_query = new WP_Query($query_args);
+    $base_url = pfl_get_product_context_url($context, $term_id);
+    $state_url = pfl_build_product_state_url(
+        $base_url,
+        $source,
+        $paged
+    );
+
+    nocache_headers();
+
+    wp_send_json_success(
+        [
+            'html'          => pfl_render_product_results_html(
+                $product_query,
+                $context,
+                $base_url,
+                $source
+            ),
+            'foundPosts'    => (int) $product_query->found_posts,
+            'maxPages'      => (int) $product_query->max_num_pages,
+            'currentPage'   => $paged,
+            'appliedCount'  => pfl_get_applied_filter_count($source),
+            'url'           => $state_url,
+            'announcement'  => sprintf(
+                '筛选完成，共找到 %d 个产品。',
+                (int) $product_query->found_posts
+            ),
+        ]
+    );
+}
+add_action('wp_ajax_pfl_filter_products', 'pfl_ajax_filter_products');
+add_action('wp_ajax_nopriv_pfl_filter_products', 'pfl_ajax_filter_products');
 
 
 /**

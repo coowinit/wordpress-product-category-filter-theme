@@ -13,7 +13,8 @@ $product_archive = get_post_type_archive_link('product');
 
     <p>
         本主题把自定义文章类型、层级分类法、产品属性、GET 筛选、
-        pre_get_posts、tax_query、meta_query、参数验证、面包屑、后台管理列和分页保留参数连接成一个完整示例。
+        AJAX 无刷新更新、History API、pre_get_posts、tax_query、meta_query、
+        参数验证、后台管理列和分页状态连接成一个完整示例。
     </p>
 
     <div class="hero__actions">
@@ -33,7 +34,7 @@ $product_archive = get_post_type_archive_link('product');
 </section>
 
 <section class="learning-section">
-    <h2>三个核心学习入口</h2>
+    <h2>四个核心学习入口</h2>
 
     <div class="learning-cards">
         <article class="learning-card">
@@ -57,6 +58,14 @@ $product_archive = get_post_type_archive_link('product');
             <p>
                 查看 pre_get_posts 中的 pfl_filter_product_main_query()，
                 理解为什么分类模板不需要重新写 WP_Query。
+            </p>
+        </article>
+
+        <article class="learning-card">
+            <h3>4. AJAX 渐进增强</h3>
+            <p>
+                查看 pfl_ajax_filter_products() 与 product-filter.js，
+                理解同一查询规则如何同时服务普通 GET 和无刷新请求。
             </p>
         </article>
     </div>

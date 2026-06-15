@@ -92,6 +92,7 @@ $is_product_archive = is_post_type_archive('product');
                                 <?php endif; ?>
                             >
                                 <?php echo esc_html($term->name); ?>
+                                <small><?php echo esc_html((string) $term->count); ?></small>
                             </a>
                         </li>
                     <?php endforeach; ?>

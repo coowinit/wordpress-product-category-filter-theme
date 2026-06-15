@@ -1,6 +1,9 @@
 <?php
 /**
  * 产品多条件筛选表单。
+ *
+ * 无 JavaScript 时：普通 GET 表单提交。
+ * JavaScript 可用时：自动通过 AJAX 更新产品结果。
  */
 
 $taxonomy_filters = pfl_get_taxonomy_filter_config();
@@ -8,20 +11,33 @@ $range_filters    = pfl_get_range_filter_config();
 $sort_options     = pfl_get_sort_options();
 $current_sort     = pfl_get_filter_value('sort');
 $applied_count    = pfl_get_applied_filter_count();
-$form_action      = pfl_get_product_filter_action() . '#product-results';
+$current_term     = pfl_get_current_product_category();
+$context          = $current_term ? 'taxonomy' : 'archive';
+$term_id          = $current_term ? (int) $current_term->term_id : 0;
+$base_action      = pfl_get_product_filter_action();
+$form_action      = $base_action . '#product-results';
 ?>
 
 <section id="product-filter-panel" class="product-filter-panel">
     <header class="product-filter-panel__header">
         <div>
-            <h2>产品多条件筛选</h2>
+            <div class="product-filter-panel__title-row">
+                <h2>产品多条件筛选</h2>
+
+                <span class="ajax-filter-badge" aria-hidden="true">
+                    AJAX 自动更新
+                </span>
+            </div>
+
             <p>
-                各筛选维度彼此独立；品牌和电压组内是“或”，功能特点组内是“同时具备”。
+                选择条件后自动更新产品列表；禁用 JavaScript 时仍可使用普通 GET 表单。
             </p>
         </div>
 
         <strong class="product-filter-panel__count">
-            <?php echo esc_html((string) $GLOBALS['wp_query']->found_posts); ?>
+            <span id="productFilterResultCount">
+                <?php echo esc_html((string) $GLOBALS['wp_query']->found_posts); ?>
+            </span>
             <small>个当前结果</small>
         </strong>
     </header>
@@ -31,6 +47,9 @@ $form_action      = pfl_get_product_filter_action() . '#product-results';
         class="product-filter-form"
         method="get"
         action="<?php echo esc_url($form_action); ?>"
+        data-ajax-context="<?php echo esc_attr($context); ?>"
+        data-term-id="<?php echo esc_attr((string) $term_id); ?>"
+        data-base-url="<?php echo esc_url($base_action); ?>"
     >
         <div
             id="filterStateBar"
@@ -89,7 +108,11 @@ $form_action      = pfl_get_product_filter_action() . '#product-results';
                     </button>
                 </div>
 
-                <div class="filter-options" role="group" aria-label="<?php echo esc_attr($filter['label']); ?>">
+                <div
+                    class="filter-options"
+                    role="group"
+                    aria-label="<?php echo esc_attr($filter['label']); ?>"
+                >
                     <?php foreach ($terms as $term) : ?>
                         <?php
                         $input_id = 'filter-' . $key . '-' . $term->term_id;
@@ -137,7 +160,11 @@ $form_action      = pfl_get_product_filter_action() . '#product-results';
                     </button>
                 </div>
 
-                <div class="filter-options" role="radiogroup" aria-label="<?php echo esc_attr($filter['label']); ?>">
+                <div
+                    class="filter-options"
+                    role="radiogroup"
+                    aria-label="<?php echo esc_attr($filter['label']); ?>"
+                >
                     <?php foreach ($filter['options'] as $value => $option) : ?>
                         <?php
                         $input_id = $key . '-' . $value;
@@ -167,6 +194,7 @@ $form_action      = pfl_get_product_filter_action() . '#product-results';
         <div class="filter-toolbar">
             <label class="filter-sort">
                 <span>排序：</span>
+
                 <select name="sort" data-filter-sort>
                     <?php foreach ($sort_options as $value => $label) : ?>
                         <option
@@ -180,14 +208,36 @@ $form_action      = pfl_get_product_filter_action() . '#product-results';
             </label>
 
             <div class="filter-toolbar__actions">
-                <a class="filter-reset-link" href="<?php echo esc_url(pfl_get_product_filter_action()); ?>">
+                <a
+                    class="filter-reset-link"
+                    href="<?php echo esc_url($base_action); ?>"
+                    data-filter-reset
+                >
                     重置筛选
                 </a>
 
-                <button id="applyFilterButton" class="filter-submit-button" type="submit">
+                <button
+                    id="applyFilterButton"
+                    class="filter-submit-button"
+                    type="submit"
+                >
                     查看筛选结果
                 </button>
             </div>
         </div>
+
+        <noscript>
+            <p class="filter-noscript-note">
+                当前浏览器未启用 JavaScript，请选择条件后点击“查看筛选结果”。
+            </p>
+        </noscript>
     </form>
+
+    <div
+        id="productFilterLiveRegion"
+        class="screen-reader-text"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+    ></div>
 </section>
