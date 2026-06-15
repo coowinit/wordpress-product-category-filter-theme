@@ -1,4 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
+  // 1. DOM 与运行环境
   const form = document.getElementById("productFilterForm");
 
   if (!form) {
@@ -55,6 +56,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const mobileMedia = window.matchMedia(`(max-width: ${breakpoint}px)`);
   const storageKey = `${config.storagePrefix || "pfl_filter_ui_"}${form.dataset.storageKey || "archive_0"}`;
 
+  // 2. 前端界面状态：真正的筛选值始终由 URL 管理
   const uiState = {
     loading: false,
     drawerOpen: false,
@@ -118,6 +120,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // 3. 表单与 URL 状态
   function getFormParams() {
     const params = new URLSearchParams();
     const formData = new FormData(form);
@@ -207,6 +210,7 @@ document.addEventListener("DOMContentLoaded", () => {
     refreshUI();
   }
 
+  // 4. 筛选组折叠、搜索和“更多”
   function setGroupExpanded(group, expanded, persist = true) {
     const key = group.dataset.filterGroup;
     const toggle = group.querySelector(".filter-group-toggle");
@@ -506,6 +510,7 @@ document.addEventListener("DOMContentLoaded", () => {
     updateSummaryCounts();
   }
 
+  // 5. AJAX 返回的结果与联动计数
   function updateFacetState(facets) {
     if (!facets || typeof facets !== "object") {
       return;
@@ -571,23 +576,19 @@ document.addEventListener("DOMContentLoaded", () => {
     ajaxError.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
-  function delay(milliseconds) {
-    return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
-  }
 
+  // 7. AJAX 请求：失败后由用户选择“重新请求”或普通 GET 页面
   async function requestProducts({
     page = 1,
     historyMode = "push",
-    focusResults = false,
-    fallbackOnError = true,
-    retryAttempt = 0
+    focusResults = false
   } = {}) {
     if (!ajaxEnabled) {
       window.location.assign(buildClientStateUrl(page));
       return;
     }
 
-    lastRequestOptions = { page, historyMode, focusResults, fallbackOnError, retryAttempt: 0 };
+    lastRequestOptions = { page, historyMode, focusResults };
     window.clearTimeout(debounceTimer);
 
     if (requestController) {
@@ -662,12 +663,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       setLoading(false);
 
-      if (fallbackOnError && retryAttempt < 1) {
-        announce(config.messages?.retrying || "请求失败，正在自动重试。");
-        await delay(500);
-        return requestProducts({ page, historyMode, focusResults, fallbackOnError, retryAttempt: retryAttempt + 1 });
-      }
-
       const message = config.messages?.error || "AJAX 请求仍未成功，可重新请求或使用普通页面打开。";
       announce(message);
       showAjaxError(message, targetUrl);
@@ -732,6 +727,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ).filter((element) => !element.hidden && element.offsetParent !== null);
   }
 
+  // 6. 移动端筛选抽屉
   function openDrawer() {
     if (!panel || !mobileMedia.matches) {
       panel?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -963,8 +959,7 @@ document.addEventListener("DOMContentLoaded", () => {
       requestProducts({
         page: getCurrentPageFromUrl(),
         historyMode: "none",
-        focusResults: false,
-        fallbackOnError: false
+        focusResults: false
       });
     });
   }

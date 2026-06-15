@@ -1274,7 +1274,7 @@
 
 .filter-row__body {
   padding: 0 16px 16px;
-  border-top: 1px solid #edf0f5;
+  border-top: 1 solid #edf0f5;
 }
 
 .pfl-filter-ui-ready .filter-row__body[hidden] {
@@ -1664,7 +1664,7 @@
   }
 
   .filter-row__body {
-    padding: 0 13px 14px;
+    padding: 13px;
   }
 
   .filter-group-toggle__meta small {
@@ -1925,3 +1925,72 @@
   }
 }
 
+
+/* =========================================================
+   v1.7.0：筛选体验收敛
+   只优化桌面端筛选布局和移动端抽屉，不扩展其他业务功能。
+   ========================================================= */
+
+@media (min-width: 821px) {
+  .selected-filter-tags {
+    max-height: 76px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+
+  .filter-state-bar__message {
+    align-self: flex-start;
+  }
+
+  .filter-row:not(.is-open) {
+    min-height: 58px;
+  }
+
+  .filter-row:not(.is-open) .filter-row__body {
+    display: none;
+  }
+
+  .filter-group-toggle__label,
+  .filter-group-clear {
+    word-break: keep-all;
+  }
+
+  .filter-option-search {
+    min-height: 42px;
+  }
+}
+
+@media (max-width: 820px) {
+  .pfl-filter-ui-ready .product-filter-panel {
+    height: 100dvh;
+    max-height: none;
+    overscroll-behavior: contain;
+  }
+
+  .product-filter-form {
+    min-height: calc(100dvh - 76px);
+  }
+
+  .filter-option {
+    min-height: 44px;
+    padding-block: 9px;
+  }
+
+  .filter-option > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .filter-group-toggle {
+    min-height: 52px;
+  }
+
+  .filter-option-search input {
+    min-height: 44px;
+  }
+
+  .filter-mobile-actions {
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+}

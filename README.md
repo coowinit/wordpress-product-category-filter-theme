@@ -1,346 +1,372 @@
 # WordPress 产品分类导航与动态筛选主题
 
-> 一套用于学习 WordPress 产品目录系统的经典主题，完整演示多层级分类导航、动态属性、AJAX 无刷新筛选、联动计数、移动端抽屉、SEO 与结构化数据。
+> 一套专注研究 WordPress 产品筛选代码的经典主题，覆盖 Schema、参数验证、`tax_query`、`meta_query`、AJAX、联动计数、分页、URL 状态，以及桌面端和手机端筛选体验。
 
-![Version](https://img.shields.io/badge/version-v1.6.0-2563eb)
+![Version](https://img.shields.io/badge/version-v1.7.0-2563eb)
 ![WordPress](https://img.shields.io/badge/WordPress-Classic%20Theme-21759b)
 ![PHP](https://img.shields.io/badge/PHP-%E2%89%A57.4-777bb4)
 ![License](https://img.shields.io/badge/license-GPL--2.0%2B-green)
 
-## 项目简介
+---
 
-本项目用于系统学习 WordPress 产品目录、分类导航、动态属性和多条件筛选开发。
+## 项目定位
+
+本项目不再继续增加收藏、产品对比、购物车、会员等业务功能。
+
+后续只围绕以下内容维护：
+
+```text
+产品筛选配置
+筛选参数验证
+taxonomy 与 post meta 查询
+AJAX 无刷新更新
+联动筛选数量
+缓存
+分页和浏览器历史
+桌面端筛选体验
+手机端筛选体验
+```
 
 当前版本：
 
 ```text
-v1.6.0｜筛选交互与移动端体验优化版
+v1.7.0
 ```
-
-v1.6.0 保留 v1.5.0 的动态属性、AJAX、联动计数、缓存、SEO 和结构化数据，重点解决筛选组较多、选项较多以及移动端页面过长的问题。
 
 ---
 
-# v1.6.0 核心更新
+# v1.7.0 核心更新
 
-## 移动端筛选抽屉
+## 筛选 PHP 模块化
 
-小屏幕下不再直接铺开整个筛选器，而是显示：
-
-```text
-筛选产品（已选 3 项）
-```
-
-点击后打开右侧抽屉。抽屉支持：
-
-- 遮罩关闭；
-- 关闭按钮；
-- `Esc` 键关闭；
-- 焦点限制在抽屉内部；
-- 关闭后焦点返回原按钮；
-- 打开时锁定页面滚动；
-- 底部固定“清空条件”和“查看结果”操作栏；
-- AJAX 更新后同步结果数量。
-
-## 筛选组折叠
-
-每个筛选组都使用可访问的按钮控制：
-
-```html
-<button
-    type="button"
-    aria-expanded="true"
-    aria-controls="filter-group-body-brand"
->
-```
-
-默认规则：
-
-- 有已选条件的组自动展开；
-- 品牌、电压等主要分组默认展开；
-- 其他分组可以折叠；
-- AJAX 更新不会重置展开状态。
-
-## “显示更多”与收起
-
-taxonomy 筛选组默认仅显示部分选项。超过首屏数量时显示：
+与筛选直接相关的代码从大型 `functions.php` 中拆分为：
 
 ```text
-显示更多 2 项
+inc/
+├── filter-schema.php
+├── filter-request.php
+├── filter-query.php
+├── filter-cache.php
+├── filter-facets.php
+└── filter-ajax.php
 ```
 
-展开后可以再次收起。首屏数量由：
+`functions.php` 继续保留：
+
+- 主题初始化；
+- `product` 自定义文章类型；
+- 产品分类与属性 taxonomy；
+- 产品自定义字段；
+- 分类导航；
+- 分类内容和已有 SEO；
+- 演示数据。
+
+这种结构既保留完整主题，又可以单独阅读筛选知识。
+
+---
+
+## 统一 GET 与 AJAX 请求
+
+新增：
 
 ```php
-pfl_get_filter_ui_config()
+pfl_get_filter_request()
 ```
 
-统一管理。
+普通 GET 页面和 AJAX 请求都先转换成同一种标准结构：
 
-## 已选项置顶
-
-每次筛选状态或联动数量变化后，组内选项按以下顺序展示：
-
-1. 已选择项；
-2. 可用且匹配数量较多的项；
-3. 其他可用项；
-4. 数量为 0 的禁用项。
-
-这里只改变前端显示顺序，不修改 WordPress term 的后台顺序。
-
-## 组内搜索
-
-品牌、应用行业、材质等选项达到阈值后自动出现搜索框。
-
-组内搜索：
-
-- 只过滤当前页面中的选项；
-- 不发送 AJAX；
-- 不修改 URL；
-- 不改变真正的产品筛选条件；
-- 支持一键清空搜索；
-- 无匹配时显示空状态。
-
-## 桌面端吸顶摘要
-
-桌面端新增简洁吸顶条：
-
-```text
-已筛选 3 项，共 12 个产品｜修改筛选｜清空
+```php
+[
+    'source'        => [],
+    'active_keys'   => [],
+    'paged'         => 1,
+    'applied_count' => 0,
+]
 ```
 
-用户滚动到产品列表后仍可快速返回筛选器或清空条件。
-
-## 骨架加载
-
-AJAX 更新时显示产品卡片骨架屏，并保留结果区域高度，减少页面跳动。
-
-分页请求期间：
-
-- 产品区进入 `aria-busy`；
-- 分页和产品链接暂时不可重复点击；
-- 联动数量进入计算状态；
-- 请求完成后滚动到结果顶部。
-
-## AJAX 自动重试与降级入口
-
-AJAX 请求失败后会：
-
-1. 自动重试一次；
-2. 仍然失败时显示错误提示；
-3. 提供“重新请求”；
-4. 提供“普通页面打开”，继续使用 GET 筛选。
-
-## 界面状态本地保存
-
-通过 `localStorage` 保存：
-
-- 哪些筛选组处于展开状态；
-- 哪些筛选组已经点击“显示更多”。
-
-存储键按归档或分类区分：
-
-```text
-pfl_filter_ui_taxonomy_18
-```
-
-真正的筛选值仍然由 URL 管理，不保存在本地存储中。
+参数只清理和验证一次，避免普通页面与 AJAX 使用不同规则。
 
 ---
 
-# 完整功能
+## 统一查询参数
 
-## 产品与属性
+新增：
 
-- `product` 自定义文章类型；
-- 多层级产品分类；
-- 品牌、电压、功能、材质、行业等 taxonomy；
-- 价格、功率、转速、宽度、距离和速度 meta；
-- 分类专属筛选组；
-- 父分类筛选配置继承。
+```php
+pfl_build_product_query_args()
+```
 
-## 筛选
+集中生成：
 
-- taxonomy `IN`；
-- taxonomy `AND`；
-- 数值区间；
-- AJAX 自动更新；
-- AJAX 分页；
-- GET 降级；
-- 地址栏与浏览器历史记录；
-- 联动候选数量；
-- 零结果禁用；
-- Transient 缓存；
-- 移动端抽屉；
-- 分组折叠；
-- 更多展开；
-- 组内搜索；
-- 已选项置顶。
+- 产品文章类型；
+- 产品分类；
+- `tax_query`；
+- `meta_query`；
+- 排序；
+- 分页。
 
-## SEO
-
-- 分类 SEO 标题；
-- Meta Description；
-- Canonical；
-- 参数页 `noindex, follow`；
-- Product、BreadcrumbList、CollectionPage、ItemList JSON-LD。
+AJAX 不再单独重复拼装一套查询代码。
 
 ---
 
-# v1.6.0 重点文件
+## 简化 AJAX 错误处理
+
+删除自动重试逻辑。
+
+现在请求失败后直接显示：
+
+```text
+重新请求
+使用普通页面打开
+```
+
+这样减少分支、避免重复请求，也更方便学习 AJAX 的完整执行流程。
+
+---
+
+## 筛选调试开关
+
+性能提示不再自动跟随 `WP_DEBUG`。
+
+需要调试筛选时，在 `wp-config.php` 中单独启用：
+
+```php
+define('PFL_FILTER_DEBUG', true);
+```
+
+只有管理员会看到缓存命中和计数耗时。
+
+---
+
+## 桌面端体验收敛
+
+- 保留稳定的标题列与内容列；
+- 防止中文标题逐字换行；
+- 收起的筛选组只保留一行；
+- 已选标签区域限制高度并允许内部滚动；
+- 搜索框保持合理宽度；
+- 筛选项和组标题继续保持清晰对齐。
+
+## 手机端体验收敛
+
+- 抽屉使用 `100dvh`；
+- 抽屉头部保持固定；
+- 底部操作栏保持固定；
+- 支持手机安全区域；
+- 筛选项触控高度不低于 44px；
+- 长文本可以自然换行；
+- 保留遮罩、Esc、焦点循环和背景滚动锁定。
+
+---
+
+# 筛选代码阅读顺序
+
+```text
+1. inc/filter-schema.php
+2. inc/filter-request.php
+3. inc/filter-query.php
+4. inc/filter-cache.php
+5. inc/filter-facets.php
+6. inc/filter-ajax.php
+7. template-parts/product/filter-form.php
+8. assets/js/product-filter.js
+9. assets/css/product.css
+```
+
+详细讲解：
+
+```text
+FILTER-FLOW.md
+```
+
+---
+
+# 文件结构
 
 ```text
 wp-product-navigation-filter-lab/
 ├── functions.php
+├── FILTER-FLOW.md
+├── README.md
 ├── style.css
-├── archive-product.php
-├── taxonomy-product_category.php
-├── template-parts/product/
-│   ├── filter-form.php
-│   └── results.php
+│
+├── inc/
+│   ├── filter-schema.php
+│   ├── filter-request.php
+│   ├── filter-query.php
+│   ├── filter-cache.php
+│   ├── filter-facets.php
+│   └── filter-ajax.php
+│
+├── template-parts/
+│   └── product/
+│       ├── filter-form.php
+│       ├── results.php
+│       ├── card.php
+│       └── no-results.php
+│
 └── assets/
     ├── css/product.css
     └── js/product-filter.js
 ```
 
-## 关键函数
+---
 
-```php
-pfl_get_filter_ui_config()
+# 核心筛选流程
+
+```text
+HTML 表单
+↓
+URLSearchParams
+↓
+WordPress AJAX
+↓
+pfl_get_filter_request()
+↓
+pfl_build_product_query_args()
+↓
+WP_Query
+↓
 pfl_get_faceted_filter_state()
-pfl_ajax_filter_products()
-```
-
-## 前端关键能力
-
-```javascript
-openDrawer()
-closeDrawer()
-setGroupExpanded()
-orderAndLimitGroupOptions()
-requestProducts()
-updateFacetState()
+↓
+JSON
+↓
+产品结果与筛选数量更新
+↓
+history.pushState()
 ```
 
 ---
 
-# 安装与升级
+# 升级方式
 
-## 从 v1.5.0 升级
-
-主题目录名保持不变，可以直接覆盖旧版本。
+主题目录名称保持不变，可直接覆盖 v1.6.1。
 
 升级后建议：
 
 ```text
 1. 清除浏览器缓存
-2. 清除页面缓存与对象缓存
+2. 清除站点页面缓存和对象缓存
 3. 设置 → 固定链接 → 保存更改
-4. 外观 → 产品主题演示数据
-5. 导入或更新演示数据
+4. 回归测试普通 GET 和 AJAX
+5. 测试电脑端和手机端筛选
 ```
 
-本版没有改变产品内容类型和已有数据结构。
+本版主要是代码重构，不要求重新导入演示产品。
 
 ---
 
 # 推荐测试
 
+## 普通 GET
+
+暂时禁用 JavaScript，提交筛选表单，确认：
+
+- URL 参数正确；
+- 产品查询正确；
+- 排序和分页正确。
+
+## AJAX
+
+确认：
+
+- 筛选条件自动更新；
+- 产品数量和 Facet 数量一致；
+- 地址栏同步；
+- 前进和后退可恢复；
+- 失败时出现手动重试和普通页面入口。
+
 ## 桌面端
 
-1. 折叠和展开多个筛选组；
-2. 点击“显示更多”和“收起”；
-3. 选择原本靠后的选项，确认已选项置顶；
-4. 使用组内搜索；
-5. 滚动页面，检查吸顶摘要；
-6. 点击分页，确认滚动到结果顶部。
+确认：
 
-## 移动端
+- 标题不换成竖排；
+- 收起组高度正常；
+- 已选标签较多时不无限撑高页面；
+- 搜索框和选项对齐。
 
-1. 点击“筛选产品”打开抽屉；
-2. 点击遮罩和关闭按钮；
-3. 使用 `Esc` 关闭；
-4. 使用键盘 `Tab` 检查焦点限制；
-5. 检查页面滚动是否锁定；
-6. 检查底部“查看多少个产品”数量；
-7. 点击查看产品，确认关闭抽屉并定位结果。
+## 手机端
 
-## AJAX 错误
+确认：
 
-可临时阻止 `admin-ajax.php` 请求，检查：
-
-```text
-自动重试
-错误提示
-重新请求
-普通页面打开
-```
-
-## 本地状态
-
-展开筛选组和更多选项后刷新页面，确认界面状态恢复；URL 中不应增加这些界面状态参数。
+- 抽屉高度适配浏览器工具栏；
+- 头部和底部操作栏固定；
+- 按钮触控区域足够；
+- 遮罩、Esc 和焦点返回正常。
 
 ---
 
-# 后续方向
+# 项目边界
 
-## v1.7.0
+明确不增加：
 
-建议增加产品对比、本地收藏和产品快速查看。
+- 产品收藏；
+- 产品对比；
+- 购物车；
+- 订单和支付；
+- 会员系统；
+- 推荐系统；
+- 前端大型框架。
 
-## v1.8.0
-
-建议建立筛选索引表、索引重建工具、性能测试数据和查询监控页面。
-
-## v2.0.0
-
-将产品内容类型、属性、查询和后台管理迁移为独立插件，主题只保留展示模板。
+后续版本只对筛选代码、性能、兼容性和桌面端/手机端体验进行维护。
 
 ---
 
 # 版本记录
 
+## v1.7.0
+
+- 将筛选代码拆分为 6 个模块；
+- 新增标准筛选请求结构；
+- GET 与 AJAX 共用参数验证；
+- AJAX 使用统一 WP_Query 参数构建；
+- 删除 AJAX 自动重试；
+- 增加独立筛选调试开关；
+- 优化桌面端已选标签和折叠组；
+- 优化手机端动态视口和触控尺寸；
+- 新增 `FILTER-FLOW.md` 学习文档；
+- 明确项目以后只研究产品筛选。
+
+## v1.6.1
+
+- 修复桌面端筛选标题逐字换行；
+- 优化桌面端筛选组布局。
+
 ## v1.6.0
 
 - 移动端筛选抽屉；
-- 抽屉遮罩、滚动锁定和焦点管理；
-- 移动端固定操作栏；
 - 筛选组折叠；
-- “显示更多 / 收起”；
-- 已选项置顶；
+- 显示更多；
 - 组内搜索；
-- 桌面端吸顶摘要；
-- 产品骨架加载；
-- AJAX 自动重试和 GET 降级入口；
-- 界面展开状态本地保存。
+- 已选项置顶。
 
 ## v1.5.0
 
-- 联动筛选计数；
-- 零结果选项禁用；
-- Transient 缓存与版本失效。
+- 联动筛选数量；
+- 零结果禁用；
+- Facet 缓存。
 
 ## v1.4.0
 
-- 分类内容管理；
-- SEO 与结构化数据。
+- 分类内容与基础 SEO。
 
 ## v1.3.0
 
-- 动态产品属性；
-- 分类专属筛选配置。
+- 动态产品属性与分类专属筛选方案。
 
 ## v1.2.0
 
-- AJAX 无刷新筛选与分页。
+- AJAX 无刷新筛选与浏览器历史记录。
 
 ## v1.1.0
 
-- 筛选体验与查询优化。
+- 筛选体验和查询优化。
 
 ## v1.0.0
 
 - 产品分类导航和多条件筛选基础版。
+
+---
 
 ## License
 
