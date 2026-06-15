@@ -35,6 +35,7 @@ get_template_part(
         'context'  => 'archive',
         'base_url' => pfl_get_product_filter_action(),
         'source'   => $_GET,
+        'active_keys' => pfl_get_active_filter_keys(),
     ]
 );
 

@@ -30,6 +30,10 @@ $source = (
     ? $args['source']
     : $_GET;
 
+$active_keys = isset($args['active_keys']) && is_array($args['active_keys'])
+    ? pfl_sanitize_filter_keys($args['active_keys'])
+    : pfl_get_active_filter_keys();
+
 $found_posts  = (int) $query->found_posts;
 $current_page = max(1, (int) $query->get('paged'));
 $summary      = 'taxonomy' === $context
@@ -73,7 +77,8 @@ $summary      = 'taxonomy' === $context
         echo pfl_get_product_pagination_html(
             $query,
             $base_url,
-            $source
+            $source,
+            $active_keys
         ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
         ?>
     <?php else : ?>
@@ -84,6 +89,7 @@ $summary      = 'taxonomy' === $context
             [
                 'source'   => $source,
                 'base_url' => $base_url,
+                'active_keys' => $active_keys,
             ]
         );
         ?>

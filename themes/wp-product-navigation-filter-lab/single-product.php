@@ -80,6 +80,26 @@ while (have_posts()) :
                             ?>
                         </strong>
                     </li>
+
+                    <?php
+                    $extra_attributes = [
+                        'product_material' => '材质',
+                        'product_application' => '应用行业',
+                        'product_automation' => '自动化程度',
+                        'product_installation' => '安装方式',
+                        'product_detection_type' => '检测方式',
+                        'product_output_type' => '输出类型',
+                        'product_protection' => '防护等级',
+                    ];
+                    foreach ($extra_attributes as $taxonomy => $label) :
+                        $attribute_terms = get_the_terms(get_the_ID(), $taxonomy);
+                        if (empty($attribute_terms) || is_wp_error($attribute_terms)) { continue; }
+                    ?>
+                        <li>
+                            <span><?php echo esc_html($label); ?></span>
+                            <strong><?php echo esc_html(implode('、', wp_list_pluck($attribute_terms, 'name'))); ?></strong>
+                        </li>
+                    <?php endforeach; ?>
                 </ul>
             </aside>
         </div>

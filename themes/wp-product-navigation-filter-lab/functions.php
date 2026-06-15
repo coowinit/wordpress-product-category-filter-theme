@@ -7,8 +7,8 @@
  * 2. 产品层级分类 product_category
  * 3. 品牌、电压、功能分类法
  * 4. 产品价格、功率、型号自定义字段
- * 5. GET 多条件筛选与 AJAX 无刷新筛选
- * 6. 浏览器历史记录与分页状态同步
+ * 5. 配置驱动的动态产品属性与 AJAX 无刷新筛选
+ * 6. 分类专属筛选、继承、历史记录与分页状态同步
  * 7. 演示数据导入器
  */
 
@@ -140,18 +140,19 @@ function pfl_register_product_post_type(): void
                 'with_front' => false,
             ],
             'menu_icon'           => 'dashicons-products',
-            'supports'            => [
-                'title',
-                'editor',
-                'excerpt',
-                'thumbnail',
-            ],
-            'taxonomies'          => [
-                'product_category',
-                'product_brand',
-                'product_voltage',
-                'product_feature',
-            ],
+            'supports'            => ['title', 'editor', 'excerpt', 'thumbnail'],
+            'taxonomies'          => array_values(
+                array_filter(
+                    array_map(
+                        static function (array $filter): string {
+                            return 'taxonomy' === ($filter['type'] ?? '')
+                                ? (string) ($filter['taxonomy'] ?? '')
+                                : '';
+                        },
+                        pfl_get_product_filter_schema()
+                    )
+                )
+            ),
             'show_in_nav_menus'   => true,
             'exclude_from_search' => false,
         ]
@@ -195,22 +196,22 @@ function pfl_register_product_taxonomies(): void
         ]
     );
 
-    $flat_taxonomies = [
-        'product_brand' => [
-            'name' => '产品品牌',
-            'slug' => 'product-brand',
-        ],
-        'product_voltage' => [
-            'name' => '产品电压',
-            'slug' => 'product-voltage',
-        ],
-        'product_feature' => [
-            'name' => '功能特点',
-            'slug' => 'product-feature',
-        ],
+    $taxonomies = [
+        'product_brand' => ['name' => '产品品牌', 'slug' => 'product-brand'],
+        'product_voltage' => ['name' => '产品电压', 'slug' => 'product-voltage'],
+        'product_feature' => ['name' => '功能特点', 'slug' => 'product-feature'],
+        'product_material' => ['name' => '产品材质', 'slug' => 'product-material'],
+        'product_application' => ['name' => '应用行业', 'slug' => 'product-application'],
+        'product_automation' => ['name' => '自动化程度', 'slug' => 'product-automation'],
+        'product_installation' => ['name' => '安装方式', 'slug' => 'product-installation'],
+        'product_output_type' => ['name' => '输出类型', 'slug' => 'product-output-type'],
+        'product_protection' => ['name' => '防护等级', 'slug' => 'product-protection'],
+        'product_packaging_type' => ['name' => '包装方式', 'slug' => 'product-packaging-type'],
+        'product_conveyor_type' => ['name' => '输送方式', 'slug' => 'product-conveyor-type'],
+        'product_detection_type' => ['name' => '检测方式', 'slug' => 'product-detection-type'],
     ];
 
-    foreach ($flat_taxonomies as $taxonomy => $config) {
+    foreach ($taxonomies as $taxonomy => $config) {
         register_taxonomy(
             $taxonomy,
             ['product'],
@@ -229,7 +230,7 @@ function pfl_register_product_taxonomies(): void
                 'public'            => true,
                 'hierarchical'      => false,
                 'show_ui'           => true,
-                'show_admin_column' => true,
+                'show_admin_column' => false,
                 'show_in_rest'      => true,
                 'rewrite'           => [
                     'slug'       => $config['slug'],
@@ -245,23 +246,75 @@ add_action('init', 'pfl_register_product_taxonomies');
 /**
  * 五、注册产品自定义字段元数据
  */
+function pfl_get_product_meta_field_config(): array
+{
+    return [
+        'product_model' => [
+            'label' => '产品型号',
+            'type' => 'text',
+            'placeholder' => '例如：VP-500',
+            'unit' => '',
+        ],
+        'product_price' => [
+            'label' => '产品价格',
+            'type' => 'number',
+            'placeholder' => '例如：26800',
+            'step' => '0.01',
+            'unit' => '元',
+        ],
+        'product_power' => [
+            'label' => '功率',
+            'type' => 'number',
+            'placeholder' => '例如：5.5',
+            'step' => '0.1',
+            'unit' => 'kW',
+        ],
+        'product_rpm' => [
+            'label' => '转速',
+            'type' => 'number',
+            'placeholder' => '例如：1450',
+            'step' => '1',
+            'unit' => 'rpm',
+        ],
+        'product_width' => [
+            'label' => '设备宽度',
+            'type' => 'number',
+            'placeholder' => '例如：800',
+            'step' => '1',
+            'unit' => 'mm',
+        ],
+        'product_detection_distance' => [
+            'label' => '检测距离',
+            'type' => 'number',
+            'placeholder' => '例如：120',
+            'step' => '0.1',
+            'unit' => 'mm',
+        ],
+        'product_speed' => [
+            'label' => '运行速度',
+            'type' => 'number',
+            'placeholder' => '例如：25',
+            'step' => '0.1',
+            'unit' => 'm/min',
+        ],
+    ];
+}
+
 function pfl_register_product_meta(): void
 {
-    $meta_fields = [
-        'product_model' => 'string',
-        'product_price' => 'number',
-        'product_power' => 'number',
-    ];
-
-    foreach ($meta_fields as $meta_key => $type) {
+    foreach (pfl_get_product_meta_field_config() as $meta_key => $field) {
         register_post_meta(
             'product',
             $meta_key,
             [
-                'type'              => $type,
+                'type'              => 'number' === $field['type'] ? 'number' : 'string',
                 'single'            => true,
                 'show_in_rest'      => true,
-                'sanitize_callback' => 'sanitize_text_field',
+                'sanitize_callback' => 'number' === $field['type']
+                    ? static function ($value) {
+                        return is_numeric($value) ? (float) $value : 0;
+                    }
+                    : 'sanitize_text_field',
                 'auth_callback'     => static function (): bool {
                     return current_user_can('edit_posts');
                 },
@@ -292,62 +345,38 @@ add_action('add_meta_boxes', 'pfl_add_product_meta_box');
 function pfl_render_product_meta_box(WP_Post $post): void
 {
     wp_nonce_field('pfl_save_product_meta', 'pfl_product_meta_nonce');
-
-    $model = get_post_meta($post->ID, 'product_model', true);
-    $price = get_post_meta($post->ID, 'product_price', true);
-    $power = get_post_meta($post->ID, 'product_power', true);
     ?>
     <table class="form-table">
-        <tr>
-            <th>
-                <label for="product_model">产品型号</label>
-            </th>
-            <td>
-                <input
-                    class="regular-text"
-                    id="product_model"
-                    name="product_model"
-                    type="text"
-                    value="<?php echo esc_attr($model); ?>"
-                    placeholder="例如：VP-500"
-                >
-            </td>
-        </tr>
-
-        <tr>
-            <th>
-                <label for="product_price">产品价格</label>
-            </th>
-            <td>
-                <input
-                    id="product_price"
-                    name="product_price"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value="<?php echo esc_attr($price); ?>"
-                    placeholder="只填写数字，例如：26800"
-                >
-                <p class="description">保存纯数字，用于价格范围筛选和排序。</p>
-            </td>
-        </tr>
-
-        <tr>
-            <th>
-                <label for="product_power">功率（kW）</label>
-            </th>
-            <td>
-                <input
-                    id="product_power"
-                    name="product_power"
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    value="<?php echo esc_attr($power); ?>"
-                    placeholder="例如：5.5"
-                >
-            </td>
-        </tr>
+        <?php foreach (pfl_get_product_meta_field_config() as $meta_key => $field) : ?>
+            <?php $value = get_post_meta($post->ID, $meta_key, true); ?>
+            <tr>
+                <th>
+                    <label for="<?php echo esc_attr($meta_key); ?>">
+                        <?php echo esc_html($field['label']); ?>
+                    </label>
+                </th>
+                <td>
+                    <input
+                        class="<?php echo 'text' === $field['type'] ? 'regular-text' : 'small-text'; ?>"
+                        id="<?php echo esc_attr($meta_key); ?>"
+                        name="<?php echo esc_attr($meta_key); ?>"
+                        type="<?php echo esc_attr($field['type']); ?>"
+                        <?php if ('number' === $field['type']) : ?>
+                            min="0"
+                            step="<?php echo esc_attr($field['step'] ?? '0.1'); ?>"
+                        <?php endif; ?>
+                        value="<?php echo esc_attr((string) $value); ?>"
+                        placeholder="<?php echo esc_attr($field['placeholder']); ?>"
+                    >
+                    <?php if (! empty($field['unit'])) : ?>
+                        <span><?php echo esc_html($field['unit']); ?></span>
+                    <?php endif; ?>
+                    <?php if ('product_price' === $meta_key) : ?>
+                        <p class="description">保存纯数字，用于范围筛选和数值排序。</p>
+                    <?php endif; ?>
+                </td>
+            </tr>
+        <?php endforeach; ?>
     </table>
     <?php
 }
@@ -365,10 +394,7 @@ function pfl_save_product_meta(int $post_id): void
         return;
     }
 
-    if (
-        defined('DOING_AUTOSAVE')
-        && DOING_AUTOSAVE
-    ) {
+    if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
         return;
     }
 
@@ -376,42 +402,23 @@ function pfl_save_product_meta(int $post_id): void
         return;
     }
 
-    $text_fields = [
-        'product_model',
-    ];
-
-    foreach ($text_fields as $field) {
-        if (isset($_POST[$field])) {
-            update_post_meta(
-                $post_id,
-                $field,
-                sanitize_text_field(wp_unslash($_POST[$field]))
-            );
-        }
-    }
-
-    $number_fields = [
-        'product_price',
-        'product_power',
-    ];
-
-    foreach ($number_fields as $field) {
-        if (! isset($_POST[$field])) {
+    foreach (pfl_get_product_meta_field_config() as $meta_key => $field) {
+        if (! isset($_POST[$meta_key])) {
             continue;
         }
 
-        $value = wp_unslash($_POST[$field]);
+        $value = wp_unslash($_POST[$meta_key]);
 
         if ('' === $value) {
-            delete_post_meta($post_id, $field);
+            delete_post_meta($post_id, $meta_key);
             continue;
         }
 
-        update_post_meta(
-            $post_id,
-            $field,
-            (float) $value
-        );
+        $clean = 'number' === $field['type']
+            ? (float) $value
+            : sanitize_text_field($value);
+
+        update_post_meta($post_id, $meta_key, $clean);
     }
 }
 add_action('save_post_product', 'pfl_save_product_meta');
@@ -423,84 +430,129 @@ add_action('save_post_product', 'pfl_save_product_meta');
  * 将筛选字段、分类法和运算符集中配置，后续增加筛选项时，
  * 不需要在模板和查询逻辑中重复编写大量判断。
  */
-function pfl_get_taxonomy_filter_config(): array
+function pfl_get_product_filter_schema(): array
 {
     return [
         'brand' => [
-            'label'    => '产品品牌',
-            'taxonomy' => 'product_brand',
-            'operator' => 'IN',
+            'label' => '产品品牌', 'type' => 'taxonomy',
+            'taxonomy' => 'product_brand', 'operator' => 'IN', 'input' => 'checkbox',
         ],
         'voltage' => [
-            'label'    => '产品电压',
-            'taxonomy' => 'product_voltage',
-            'operator' => 'IN',
+            'label' => '产品电压', 'type' => 'taxonomy',
+            'taxonomy' => 'product_voltage', 'operator' => 'IN', 'input' => 'checkbox',
         ],
         'feature' => [
-            'label'    => '功能特点',
-            'taxonomy' => 'product_feature',
-            'operator' => 'AND',
+            'label' => '功能特点', 'type' => 'taxonomy',
+            'taxonomy' => 'product_feature', 'operator' => 'AND', 'input' => 'checkbox',
+        ],
+        'material' => [
+            'label' => '产品材质', 'type' => 'taxonomy',
+            'taxonomy' => 'product_material', 'operator' => 'IN', 'input' => 'checkbox',
+        ],
+        'application' => [
+            'label' => '应用行业', 'type' => 'taxonomy',
+            'taxonomy' => 'product_application', 'operator' => 'IN', 'input' => 'checkbox',
+        ],
+        'automation' => [
+            'label' => '自动化程度', 'type' => 'taxonomy',
+            'taxonomy' => 'product_automation', 'operator' => 'IN', 'input' => 'checkbox',
+        ],
+        'installation' => [
+            'label' => '安装方式', 'type' => 'taxonomy',
+            'taxonomy' => 'product_installation', 'operator' => 'IN', 'input' => 'checkbox',
+        ],
+        'output_type' => [
+            'label' => '输出类型', 'type' => 'taxonomy',
+            'taxonomy' => 'product_output_type', 'operator' => 'IN', 'input' => 'checkbox',
+        ],
+        'protection' => [
+            'label' => '防护等级', 'type' => 'taxonomy',
+            'taxonomy' => 'product_protection', 'operator' => 'IN', 'input' => 'checkbox',
+        ],
+        'packaging_type' => [
+            'label' => '包装方式', 'type' => 'taxonomy',
+            'taxonomy' => 'product_packaging_type', 'operator' => 'IN', 'input' => 'checkbox',
+        ],
+        'conveyor_type' => [
+            'label' => '输送方式', 'type' => 'taxonomy',
+            'taxonomy' => 'product_conveyor_type', 'operator' => 'IN', 'input' => 'checkbox',
+        ],
+        'detection_type' => [
+            'label' => '检测方式', 'type' => 'taxonomy',
+            'taxonomy' => 'product_detection_type', 'operator' => 'IN', 'input' => 'checkbox',
+        ],
+        'price_range' => [
+            'label' => '价格范围', 'type' => 'range', 'meta_key' => 'product_price',
+            'options' => [
+                'under-10000' => ['label' => '1 万以下', 'value' => 10000, 'compare' => '<'],
+                '10000-30000' => ['label' => '1 万～3 万', 'value' => [10000, 30000], 'compare' => 'BETWEEN'],
+                '30000-50000' => ['label' => '3 万～5 万', 'value' => [30000, 50000], 'compare' => 'BETWEEN'],
+                'over-50000' => ['label' => '5 万以上', 'value' => 50000, 'compare' => '>='],
+            ],
+        ],
+        'power_range' => [
+            'label' => '功率范围', 'type' => 'range', 'meta_key' => 'product_power',
+            'options' => [
+                'under-3' => ['label' => '3kW 以下', 'value' => 3, 'compare' => '<'],
+                '3-5' => ['label' => '3～5kW', 'value' => [3, 5], 'compare' => 'BETWEEN'],
+                '5-10' => ['label' => '5～10kW', 'value' => [5, 10], 'compare' => 'BETWEEN'],
+                'over-10' => ['label' => '10kW 以上', 'value' => 10, 'compare' => '>='],
+            ],
+        ],
+        'rpm_range' => [
+            'label' => '转速范围', 'type' => 'range', 'meta_key' => 'product_rpm',
+            'options' => [
+                'under-1000' => ['label' => '1000rpm 以下', 'value' => 1000, 'compare' => '<'],
+                '1000-2000' => ['label' => '1000～2000rpm', 'value' => [1000, 2000], 'compare' => 'BETWEEN'],
+                'over-2000' => ['label' => '2000rpm 以上', 'value' => 2000, 'compare' => '>='],
+            ],
+        ],
+        'width_range' => [
+            'label' => '设备宽度', 'type' => 'range', 'meta_key' => 'product_width',
+            'options' => [
+                'under-600' => ['label' => '600mm 以下', 'value' => 600, 'compare' => '<'],
+                '600-1000' => ['label' => '600～1000mm', 'value' => [600, 1000], 'compare' => 'BETWEEN'],
+                'over-1000' => ['label' => '1000mm 以上', 'value' => 1000, 'compare' => '>='],
+            ],
+        ],
+        'distance_range' => [
+            'label' => '检测距离', 'type' => 'range', 'meta_key' => 'product_detection_distance',
+            'options' => [
+                'under-50' => ['label' => '50mm 以下', 'value' => 50, 'compare' => '<'],
+                '50-200' => ['label' => '50～200mm', 'value' => [50, 200], 'compare' => 'BETWEEN'],
+                'over-200' => ['label' => '200mm 以上', 'value' => 200, 'compare' => '>='],
+            ],
+        ],
+        'speed_range' => [
+            'label' => '运行速度', 'type' => 'range', 'meta_key' => 'product_speed',
+            'options' => [
+                'under-10' => ['label' => '10m/min 以下', 'value' => 10, 'compare' => '<'],
+                '10-30' => ['label' => '10～30m/min', 'value' => [10, 30], 'compare' => 'BETWEEN'],
+                'over-30' => ['label' => '30m/min 以上', 'value' => 30, 'compare' => '>='],
+            ],
         ],
     ];
+}
+
+function pfl_get_taxonomy_filter_config(): array
+{
+    return array_filter(
+        pfl_get_product_filter_schema(),
+        static function (array $filter): bool {
+            return 'taxonomy' === ($filter['type'] ?? '');
+        }
+    );
 }
 
 
 function pfl_get_range_filter_config(): array
 {
-    return [
-        'price_range' => [
-            'label'    => '价格范围',
-            'meta_key' => 'product_price',
-            'options'  => [
-                'under-10000' => [
-                    'label'   => '1 万以下',
-                    'value'   => 10000,
-                    'compare' => '<',
-                ],
-                '10000-30000' => [
-                    'label'   => '1 万～3 万',
-                    'value'   => [10000, 30000],
-                    'compare' => 'BETWEEN',
-                ],
-                '30000-50000' => [
-                    'label'   => '3 万～5 万',
-                    'value'   => [30000, 50000],
-                    'compare' => 'BETWEEN',
-                ],
-                'over-50000' => [
-                    'label'   => '5 万以上',
-                    'value'   => 50000,
-                    'compare' => '>=',
-                ],
-            ],
-        ],
-        'power_range' => [
-            'label'    => '功率范围',
-            'meta_key' => 'product_power',
-            'options'  => [
-                'under-3' => [
-                    'label'   => '3kW 以下',
-                    'value'   => 3,
-                    'compare' => '<',
-                ],
-                '3-5' => [
-                    'label'   => '3～5kW',
-                    'value'   => [3, 5],
-                    'compare' => 'BETWEEN',
-                ],
-                '5-10' => [
-                    'label'   => '5～10kW',
-                    'value'   => [5, 10],
-                    'compare' => 'BETWEEN',
-                ],
-                'over-10' => [
-                    'label'   => '10kW 以上',
-                    'value'   => 10,
-                    'compare' => '>=',
-                ],
-            ],
-        ],
-    ];
+    return array_filter(
+        pfl_get_product_filter_schema(),
+        static function (array $filter): bool {
+            return 'range' === ($filter['type'] ?? '');
+        }
+    );
 }
 
 
@@ -513,6 +565,491 @@ function pfl_get_sort_options(): array
         'title'      => '标题排序',
     ];
 }
+
+/**
+ * 动态筛选方案：默认字段、分类继承与后台 term meta。
+ */
+function pfl_get_default_filter_keys(): array
+{
+    return [
+        'brand', 'voltage', 'feature', 'material', 'application',
+        'price_range', 'power_range',
+    ];
+}
+
+function pfl_sanitize_filter_keys($keys): array
+{
+    $schema = pfl_get_product_filter_schema();
+    $clean = [];
+
+    foreach ((array) $keys as $key) {
+        $key = sanitize_key((string) $key);
+
+        if (isset($schema[$key]) && ! in_array($key, $clean, true)) {
+            $clean[] = $key;
+        }
+    }
+
+    return $clean;
+}
+
+function pfl_register_product_category_meta(): void
+{
+    register_term_meta(
+        'product_category',
+        'pfl_filter_mode',
+        [
+            'type' => 'string', 'single' => true, 'show_in_rest' => false,
+            'sanitize_callback' => static function ($value): string {
+                return 'custom' === sanitize_key((string) $value) ? 'custom' : 'inherit';
+            },
+            'auth_callback' => static function (): bool {
+                return current_user_can('manage_categories');
+            },
+        ]
+    );
+
+    register_term_meta(
+        'product_category',
+        'pfl_filter_groups',
+        [
+            'type' => 'array', 'single' => true, 'show_in_rest' => false,
+            'sanitize_callback' => 'pfl_sanitize_filter_keys',
+            'auth_callback' => static function (): bool {
+                return current_user_can('manage_categories');
+            },
+        ]
+    );
+}
+add_action('init', 'pfl_register_product_category_meta');
+
+function pfl_resolve_filter_profile(?WP_Term $term = null): array
+{
+    if (! $term) {
+        $term = pfl_get_current_product_category();
+    }
+
+    if (! $term) {
+        return [
+            'keys' => pfl_get_default_filter_keys(),
+            'source_term' => null,
+            'source_label' => '全局默认方案',
+            'inherited' => false,
+        ];
+    }
+
+    $index = pfl_get_product_category_index();
+    $cursor = $term;
+    $guard = 0;
+
+    while ($cursor instanceof WP_Term && $guard < 50) {
+        $mode = get_term_meta($cursor->term_id, 'pfl_filter_mode', true);
+
+        if ('custom' === $mode) {
+            return [
+                'keys' => pfl_sanitize_filter_keys(
+                    get_term_meta($cursor->term_id, 'pfl_filter_groups', true)
+                ),
+                'source_term' => $cursor,
+                'source_label' => (int) $cursor->term_id === (int) $term->term_id
+                    ? '当前分类专属方案'
+                    : '继承自“' . $cursor->name . '”',
+                'inherited' => (int) $cursor->term_id !== (int) $term->term_id,
+            ];
+        }
+
+        $parent_id = (int) $cursor->parent;
+        $cursor = $parent_id > 0 && isset($index['by_id'][$parent_id])
+            ? $index['by_id'][$parent_id]
+            : null;
+        $guard++;
+    }
+
+    return [
+        'keys' => pfl_get_default_filter_keys(),
+        'source_term' => null,
+        'source_label' => '继承全局默认方案',
+        'inherited' => true,
+    ];
+}
+
+function pfl_get_active_filter_keys(?WP_Term $term = null): array
+{
+    $profile = pfl_resolve_filter_profile($term);
+    return $profile['keys'];
+}
+
+function pfl_get_query_product_category(WP_Query $query): ?WP_Term
+{
+    if (! $query->is_tax('product_category')) {
+        return null;
+    }
+
+    $term = $query->get_queried_object();
+
+    if ($term instanceof WP_Term && 'product_category' === $term->taxonomy) {
+        return $term;
+    }
+
+    $slug = $query->get('product_category');
+    $term = $slug ? get_term_by('slug', (string) $slug, 'product_category') : false;
+
+    return $term instanceof WP_Term ? $term : null;
+}
+
+/**
+ * 分类后台：筛选方案设置与拖拽排序。
+ */
+function pfl_filter_group_admin_list(array $selected): void
+{
+    $schema = pfl_get_product_filter_schema();
+    $ordered = array_values(array_unique(array_merge($selected, array_keys($schema))));
+    ?>
+    <ul id="pfl-filter-group-sortable" class="pfl-filter-group-sortable">
+        <?php foreach ($ordered as $key) : ?>
+            <?php if (! isset($schema[$key])) { continue; } ?>
+            <li data-filter-key="<?php echo esc_attr($key); ?>">
+                <span class="dashicons dashicons-move" aria-hidden="true"></span>
+                <label>
+                    <input
+                        type="checkbox"
+                        name="pfl_filter_groups[]"
+                        value="<?php echo esc_attr($key); ?>"
+                        <?php checked(in_array($key, $selected, true)); ?>
+                    >
+                    <strong><?php echo esc_html($schema[$key]['label']); ?></strong>
+                    <code><?php echo esc_html($key); ?></code>
+                </label>
+            </li>
+        <?php endforeach; ?>
+    </ul>
+    <input
+        id="pfl-filter-order"
+        name="pfl_filter_order"
+        type="hidden"
+        value="<?php echo esc_attr(implode(',', $ordered)); ?>"
+    >
+    <?php
+}
+
+function pfl_product_category_add_filter_fields(): void
+{
+    $selected = pfl_get_default_filter_keys();
+    wp_nonce_field('pfl_save_category_filters', 'pfl_category_filter_nonce');
+    ?>
+    <div class="form-field pfl-filter-config-field">
+        <label>筛选方案</label>
+        <label><input type="radio" name="pfl_filter_mode" value="inherit" checked> 继承父分类或全局默认方案</label><br>
+        <label><input type="radio" name="pfl_filter_mode" value="custom"> 使用当前分类专属方案</label>
+        <p class="description">切换为专属方案后，可勾选并拖动下方筛选组。</p>
+        <?php pfl_filter_group_admin_list($selected); ?>
+    </div>
+    <?php
+}
+add_action('product_category_add_form_fields', 'pfl_product_category_add_filter_fields');
+
+function pfl_product_category_edit_filter_fields(WP_Term $term): void
+{
+    $mode = get_term_meta($term->term_id, 'pfl_filter_mode', true);
+    $mode = 'custom' === $mode ? 'custom' : 'inherit';
+    $selected = pfl_sanitize_filter_keys(
+        get_term_meta($term->term_id, 'pfl_filter_groups', true)
+    );
+
+    if (empty($selected)) {
+        $selected = pfl_get_default_filter_keys();
+    }
+
+    wp_nonce_field('pfl_save_category_filters', 'pfl_category_filter_nonce');
+    ?>
+    <tr class="form-field pfl-filter-config-field">
+        <th scope="row"><label>筛选方案</label></th>
+        <td>
+            <label><input type="radio" name="pfl_filter_mode" value="inherit" <?php checked($mode, 'inherit'); ?>> 继承父分类或全局默认方案</label><br>
+            <label><input type="radio" name="pfl_filter_mode" value="custom" <?php checked($mode, 'custom'); ?>> 使用当前分类专属方案</label>
+            <p class="description">专属方案中的勾选状态决定显示哪些筛选组，拖动顺序决定前台排列顺序。</p>
+            <?php pfl_filter_group_admin_list($selected); ?>
+        </td>
+    </tr>
+    <?php
+}
+add_action('product_category_edit_form_fields', 'pfl_product_category_edit_filter_fields');
+
+function pfl_save_product_category_filter_fields(int $term_id): void
+{
+    if (
+        ! isset($_POST['pfl_category_filter_nonce'])
+        || ! wp_verify_nonce(
+            sanitize_text_field(wp_unslash($_POST['pfl_category_filter_nonce'])),
+            'pfl_save_category_filters'
+        )
+        || ! current_user_can('manage_categories')
+    ) {
+        return;
+    }
+
+    $mode = isset($_POST['pfl_filter_mode'])
+        && 'custom' === sanitize_key(wp_unslash($_POST['pfl_filter_mode']))
+        ? 'custom'
+        : 'inherit';
+
+    $selected = isset($_POST['pfl_filter_groups'])
+        ? pfl_sanitize_filter_keys(wp_unslash($_POST['pfl_filter_groups']))
+        : [];
+
+    $order = isset($_POST['pfl_filter_order'])
+        ? pfl_sanitize_filter_keys(
+            explode(',', sanitize_text_field(wp_unslash($_POST['pfl_filter_order'])))
+        )
+        : array_keys(pfl_get_product_filter_schema());
+
+    $selected = array_values(
+        array_filter(
+            $order,
+            static function (string $key) use ($selected): bool {
+                return in_array($key, $selected, true);
+            }
+        )
+    );
+
+    update_term_meta($term_id, 'pfl_filter_mode', $mode);
+    update_term_meta($term_id, 'pfl_filter_groups', $selected);
+}
+add_action('created_product_category', 'pfl_save_product_category_filter_fields');
+add_action('edited_product_category', 'pfl_save_product_category_filter_fields');
+
+function pfl_product_category_admin_assets(string $hook): void
+{
+    $screen = get_current_screen();
+
+    if (
+        ! $screen
+        || 'product_category' !== $screen->taxonomy
+        || ! in_array($hook, ['edit-tags.php', 'term.php'], true)
+    ) {
+        return;
+    }
+
+    wp_enqueue_script('jquery-ui-sortable');
+
+    $script = <<<'JS'
+    jQuery(function ($) {
+        const $list = $('#pfl-filter-group-sortable');
+        const $order = $('#pfl-filter-order');
+
+        function syncOrder() {
+            const keys = $list.children('[data-filter-key]').map(function () {
+                return $(this).data('filter-key');
+            }).get();
+            $order.val(keys.join(','));
+        }
+
+        if ($list.length) {
+            $list.sortable({
+                handle: '.dashicons-move',
+                update: syncOrder
+            });
+            syncOrder();
+        }
+    });
+    JS;
+
+    wp_add_inline_script('jquery-ui-sortable', $script);
+}
+add_action('admin_enqueue_scripts', 'pfl_product_category_admin_assets');
+
+function pfl_product_category_admin_styles(): void
+{
+    $screen = get_current_screen();
+
+    if (! $screen || 'product_category' !== $screen->taxonomy) {
+        return;
+    }
+    ?>
+    <style>
+        .pfl-filter-group-sortable { max-width: 720px; margin: 14px 0 0; }
+        .pfl-filter-group-sortable li { display:flex; align-items:center; gap:8px; margin:0 0 6px; padding:9px 12px; border:1px solid #dcdcde; border-radius:6px; background:#fff; }
+        .pfl-filter-group-sortable .dashicons-move { cursor:move; color:#646970; }
+        .pfl-filter-group-sortable label { display:flex; align-items:center; gap:8px; width:100%; }
+        .pfl-filter-group-sortable code { margin-left:auto; }
+    </style>
+    <?php
+}
+add_action('admin_head-edit-tags.php', 'pfl_product_category_admin_styles');
+add_action('admin_head-term.php', 'pfl_product_category_admin_styles');
+
+function pfl_product_category_columns(array $columns): array
+{
+    $columns['pfl_filter_profile'] = '筛选方案';
+    return $columns;
+}
+add_filter('manage_edit-product_category_columns', 'pfl_product_category_columns');
+
+function pfl_product_category_column_content(string $content, string $column, int $term_id): string
+{
+    if ('pfl_filter_profile' !== $column) {
+        return $content;
+    }
+
+    $mode = get_term_meta($term_id, 'pfl_filter_mode', true);
+
+    if ('custom' !== $mode) {
+        return '继承';
+    }
+
+    $schema = pfl_get_product_filter_schema();
+    $labels = [];
+
+    foreach (pfl_sanitize_filter_keys(get_term_meta($term_id, 'pfl_filter_groups', true)) as $key) {
+        if (isset($schema[$key])) {
+            $labels[] = $schema[$key]['label'];
+        }
+    }
+
+    return empty($labels) ? '专属：无筛选组' : esc_html(implode('、', $labels));
+}
+add_filter('manage_product_category_custom_column', 'pfl_product_category_column_content', 10, 3);
+
+/**
+ * 当前分类范围中的产品与可用筛选项。
+ */
+function pfl_get_context_product_ids(int $term_id = 0): array
+{
+    static $cache = [];
+
+    if (isset($cache[$term_id])) {
+        return $cache[$term_id];
+    }
+
+    $args = [
+        'post_type' => 'product', 'post_status' => 'publish',
+        'posts_per_page' => -1, 'fields' => 'ids', 'no_found_rows' => true,
+        'orderby' => 'ID', 'order' => 'ASC',
+    ];
+
+    if ($term_id > 0) {
+        $args['tax_query'] = [[
+            'taxonomy' => 'product_category', 'field' => 'term_id',
+            'terms' => [$term_id], 'include_children' => true,
+        ]];
+    }
+
+    $ids = get_posts($args);
+    $cache[$term_id] = array_map('intval', $ids);
+    return $cache[$term_id];
+}
+
+function pfl_get_filter_term_options(string $key, int $term_id = 0): array
+{
+    static $cache = [];
+    $cache_key = $key . ':' . $term_id;
+
+    if (isset($cache[$cache_key])) {
+        return $cache[$cache_key];
+    }
+
+    $schema = pfl_get_product_filter_schema();
+
+    if (! isset($schema[$key]) || 'taxonomy' !== $schema[$key]['type']) {
+        return [];
+    }
+
+    $taxonomy = $schema[$key]['taxonomy'];
+
+    if ($term_id <= 0) {
+        $terms = get_terms([
+            'taxonomy' => $taxonomy, 'hide_empty' => true,
+            'orderby' => 'name', 'order' => 'ASC',
+        ]);
+
+        if (is_wp_error($terms)) {
+            return [];
+        }
+
+        $cache[$cache_key] = array_map(
+            static function (WP_Term $term): array {
+                return ['term' => $term, 'count' => (int) $term->count];
+            },
+            $terms
+        );
+        return $cache[$cache_key];
+    }
+
+    $product_ids = pfl_get_context_product_ids($term_id);
+
+    if (empty($product_ids)) {
+        return [];
+    }
+
+    $relations = wp_get_object_terms(
+        $product_ids,
+        $taxonomy,
+        ['fields' => 'all_with_object_id']
+    );
+
+    if (is_wp_error($relations)) {
+        return [];
+    }
+
+    $terms = [];
+    $counts = [];
+
+    foreach ($relations as $term) {
+        $id = (int) $term->term_id;
+        $terms[$id] = $term;
+        $counts[$id] = ($counts[$id] ?? 0) + 1;
+    }
+
+    uasort(
+        $terms,
+        static function (WP_Term $a, WP_Term $b): int {
+            return strnatcasecmp($a->name, $b->name);
+        }
+    );
+
+    $options = [];
+    foreach ($terms as $id => $term) {
+        $options[] = ['term' => $term, 'count' => (int) ($counts[$id] ?? 0)];
+    }
+
+    $cache[$cache_key] = $options;
+    return $options;
+}
+
+function pfl_range_filter_has_values(string $key, int $term_id = 0): bool
+{
+    static $cache = [];
+    $cache_key = $key . ':' . $term_id;
+
+    if (isset($cache[$cache_key])) {
+        return $cache[$cache_key];
+    }
+
+    $schema = pfl_get_product_filter_schema();
+
+    if (! isset($schema[$key]) || 'range' !== $schema[$key]['type']) {
+        return false;
+    }
+
+    $args = [
+        'post_type' => 'product', 'post_status' => 'publish',
+        'posts_per_page' => 1, 'fields' => 'ids', 'no_found_rows' => true,
+        'meta_query' => [[
+            'key' => $schema[$key]['meta_key'], 'compare' => 'EXISTS',
+        ]],
+    ];
+
+    if ($term_id > 0) {
+        $args['tax_query'] = [[
+            'taxonomy' => 'product_category', 'field' => 'term_id',
+            'terms' => [$term_id], 'include_children' => true,
+        ]];
+    }
+
+    $cache[$cache_key] = ! empty(get_posts($args));
+    return $cache[$cache_key];
+}
+
 
 
 /**
@@ -559,23 +1096,25 @@ function pfl_get_allowed_taxonomy_slugs(string $taxonomy): array
  */
 function pfl_get_filter_values(
     string $key,
-    ?array $source = null
+    ?array $source = null,
+    ?array $active_keys = null
 ): array {
-    $config = pfl_get_taxonomy_filter_config();
+    $schema = pfl_get_product_filter_schema();
     $source = null === $source ? $_GET : $source;
+    $active_keys = null === $active_keys ? pfl_get_active_filter_keys() : pfl_sanitize_filter_keys($active_keys);
 
-    if (! isset($config[$key]) || ! isset($source[$key])) {
+    if (
+        ! isset($schema[$key])
+        || 'taxonomy' !== $schema[$key]['type']
+        || ! in_array($key, $active_keys, true)
+        || ! isset($source[$key])
+    ) {
         return [];
     }
 
-    $values = (array) wp_unslash($source[$key]);
-    $values = array_map('sanitize_title', $values);
-    $values = array_values(array_unique(array_filter($values)));
-    $values = array_slice($values, 0, 20);
-
-    $allowed = pfl_get_allowed_taxonomy_slugs(
-        $config[$key]['taxonomy']
-    );
+    $values = array_map('sanitize_title', (array) wp_unslash($source[$key]));
+    $values = array_slice(array_values(array_unique(array_filter($values))), 0, 20);
+    $allowed = pfl_get_allowed_taxonomy_slugs($schema[$key]['taxonomy']);
 
     return array_values(array_intersect($values, $allowed));
 }
@@ -586,7 +1125,8 @@ function pfl_get_filter_values(
  */
 function pfl_get_filter_value(
     string $key,
-    ?array $source = null
+    ?array $source = null,
+    ?array $active_keys = null
 ): string {
     $source = null === $source ? $_GET : $source;
 
@@ -595,39 +1135,45 @@ function pfl_get_filter_value(
     }
 
     $value = sanitize_key(wp_unslash($source[$key]));
-    $range_config = pfl_get_range_filter_config();
-
-    if (isset($range_config[$key])) {
-        return isset($range_config[$key]['options'][$value])
-            ? $value
-            : '';
-    }
 
     if ('sort' === $key) {
-        $sort_options = pfl_get_sort_options();
-
-        return array_key_exists($value, $sort_options)
-            ? $value
-            : '';
+        return array_key_exists($value, pfl_get_sort_options()) ? $value : '';
     }
 
-    return '';
+    $schema = pfl_get_product_filter_schema();
+    $active_keys = null === $active_keys ? pfl_get_active_filter_keys() : pfl_sanitize_filter_keys($active_keys);
+
+    if (
+        ! isset($schema[$key])
+        || 'range' !== $schema[$key]['type']
+        || ! in_array($key, $active_keys, true)
+    ) {
+        return '';
+    }
+
+    return isset($schema[$key]['options'][$value]) ? $value : '';
 }
 
 
 /**
  * 十一、统计当前已经应用的筛选条件数量。
  */
-function pfl_get_applied_filter_count(?array $source = null): int
-{
+function pfl_get_applied_filter_count(
+    ?array $source = null,
+    ?array $active_keys = null
+): int {
+    $active_keys = null === $active_keys ? pfl_get_active_filter_keys() : pfl_sanitize_filter_keys($active_keys);
+    $schema = pfl_get_product_filter_schema();
     $count = 0;
 
-    foreach (array_keys(pfl_get_taxonomy_filter_config()) as $key) {
-        $count += count(pfl_get_filter_values($key, $source));
-    }
+    foreach ($active_keys as $key) {
+        if (! isset($schema[$key])) {
+            continue;
+        }
 
-    foreach (array_keys(pfl_get_range_filter_config()) as $key) {
-        if (pfl_get_filter_value($key, $source)) {
+        if ('taxonomy' === $schema[$key]['type']) {
+            $count += count(pfl_get_filter_values($key, $source, $active_keys));
+        } elseif (pfl_get_filter_value($key, $source, $active_keys)) {
             $count++;
         }
     }
@@ -636,9 +1182,11 @@ function pfl_get_applied_filter_count(?array $source = null): int
 }
 
 
-function pfl_has_active_product_filters(?array $source = null): bool
-{
-    return pfl_get_applied_filter_count($source) > 0;
+function pfl_has_active_product_filters(
+    ?array $source = null,
+    ?array $active_keys = null
+): bool {
+    return pfl_get_applied_filter_count($source, $active_keys) > 0;
 }
 
 
@@ -647,78 +1195,60 @@ function pfl_has_active_product_filters(?array $source = null): bool
  *
  * 普通 GET 请求和 AJAX 请求共用此函数，避免两套查询规则逐渐不一致。
  */
-function pfl_get_product_query_parts(array $source): array
-{
-    $tax_clauses  = [];
+function pfl_get_product_query_parts(
+    array $source,
+    ?array $active_keys = null
+): array {
+    $schema = pfl_get_product_filter_schema();
+    $active_keys = null === $active_keys ? pfl_get_active_filter_keys() : pfl_sanitize_filter_keys($active_keys);
+    $tax_clauses = [];
     $meta_clauses = [];
 
-    foreach (pfl_get_taxonomy_filter_config() as $key => $filter) {
-        $values = pfl_get_filter_values($key, $source);
-
-        if (empty($values)) {
+    foreach ($active_keys as $key) {
+        if (! isset($schema[$key])) {
             continue;
         }
 
-        $tax_clauses[] = [
-            'taxonomy' => $filter['taxonomy'],
-            'field'    => 'slug',
-            'terms'    => $values,
-            'operator' => $filter['operator'],
-        ];
-    }
+        $filter = $schema[$key];
 
-    foreach (pfl_get_range_filter_config() as $key => $filter) {
-        $selected = pfl_get_filter_value($key, $source);
+        if ('taxonomy' === $filter['type']) {
+            $values = pfl_get_filter_values($key, $source, $active_keys);
 
-        if (! $selected || ! isset($filter['options'][$selected])) {
-            continue;
+            if (! empty($values)) {
+                $tax_clauses[] = [
+                    'taxonomy' => $filter['taxonomy'], 'field' => 'slug',
+                    'terms' => $values, 'operator' => $filter['operator'],
+                ];
+            }
+        } elseif ('range' === $filter['type']) {
+            $selected = pfl_get_filter_value($key, $source, $active_keys);
+
+            if ($selected && isset($filter['options'][$selected])) {
+                $option = $filter['options'][$selected];
+                $meta_clauses[] = [
+                    'key' => $filter['meta_key'], 'value' => $option['value'],
+                    'type' => 'NUMERIC', 'compare' => $option['compare'],
+                ];
+            }
         }
-
-        $option = $filter['options'][$selected];
-
-        $meta_clauses[] = [
-            'key'     => $filter['meta_key'],
-            'value'   => $option['value'],
-            'type'    => 'NUMERIC',
-            'compare' => $option['compare'],
-        ];
     }
 
-    $sort = pfl_get_filter_value('sort', $source);
-    $sort_args = [
-        'orderby' => 'date',
-        'order'   => 'DESC',
-    ];
+    $sort = pfl_get_filter_value('sort', $source, $active_keys);
+    $sort_args = ['orderby' => 'date', 'order' => 'DESC'];
 
-    switch ($sort) {
-        case 'price-asc':
-            $sort_args = [
-                'meta_key' => 'product_price',
-                'orderby'  => 'meta_value_num',
-                'order'    => 'ASC',
-            ];
-            break;
-
-        case 'price-desc':
-            $sort_args = [
-                'meta_key' => 'product_price',
-                'orderby'  => 'meta_value_num',
-                'order'    => 'DESC',
-            ];
-            break;
-
-        case 'title':
-            $sort_args = [
-                'orderby' => 'title',
-                'order'   => 'ASC',
-            ];
-            break;
+    if ('price-asc' === $sort || 'price-desc' === $sort) {
+        $sort_args = [
+            'meta_key' => 'product_price', 'orderby' => 'meta_value_num',
+            'order' => 'price-asc' === $sort ? 'ASC' : 'DESC',
+        ];
+    } elseif ('title' === $sort) {
+        $sort_args = ['orderby' => 'title', 'order' => 'ASC'];
     }
 
     return [
-        'tax_clauses'  => $tax_clauses,
+        'tax_clauses' => $tax_clauses,
         'meta_clauses' => $meta_clauses,
-        'sort_args'    => $sort_args,
+        'sort_args' => $sort_args,
     ];
 }
 
@@ -728,35 +1258,22 @@ function pfl_get_product_query_parts(array $source): array
  */
 function pfl_apply_product_query_parts(
     WP_Query $query,
-    array $source
+    array $source,
+    ?array $active_keys = null
 ): void {
-    $parts = pfl_get_product_query_parts($source);
+    $parts = pfl_get_product_query_parts($source, $active_keys);
 
     if (! empty($parts['tax_clauses'])) {
         $tax_query = (array) $query->get('tax_query');
-
-        if (! isset($tax_query['relation'])) {
-            $tax_query['relation'] = 'AND';
-        }
-
-        foreach ($parts['tax_clauses'] as $clause) {
-            $tax_query[] = $clause;
-        }
-
+        if (! isset($tax_query['relation'])) { $tax_query['relation'] = 'AND'; }
+        foreach ($parts['tax_clauses'] as $clause) { $tax_query[] = $clause; }
         $query->set('tax_query', $tax_query);
     }
 
     if (! empty($parts['meta_clauses'])) {
         $meta_query = (array) $query->get('meta_query');
-
-        if (! isset($meta_query['relation'])) {
-            $meta_query['relation'] = 'AND';
-        }
-
-        foreach ($parts['meta_clauses'] as $clause) {
-            $meta_query[] = $clause;
-        }
-
+        if (! isset($meta_query['relation'])) { $meta_query['relation'] = 'AND'; }
+        foreach ($parts['meta_clauses'] as $clause) { $meta_query[] = $clause; }
         $query->set('meta_query', $meta_query);
     }
 
@@ -777,17 +1294,16 @@ function pfl_filter_product_main_query(WP_Query $query): void
         return;
     }
 
-    if (
-        ! $query->is_post_type_archive('product')
-        && ! $query->is_tax('product_category')
-    ) {
+    if (! $query->is_post_type_archive('product') && ! $query->is_tax('product_category')) {
         return;
     }
 
+    $term = pfl_get_query_product_category($query);
+    $active_keys = pfl_get_active_filter_keys($term);
+
     $query->set('post_type', 'product');
     $query->set('posts_per_page', 9);
-
-    pfl_apply_product_query_parts($query, $_GET);
+    pfl_apply_product_query_parts($query, $_GET, $active_keys);
 }
 add_action('pre_get_posts', 'pfl_filter_product_main_query');
 
@@ -1062,33 +1578,28 @@ function pfl_get_product_filter_action(): string
  * 十六、获取筛选分页需要保留的、已经通过白名单验证的参数。
  */
 function pfl_get_pagination_filter_args(
-    ?array $source = null
+    ?array $source = null,
+    ?array $active_keys = null
 ): array {
     $source = null === $source ? $_GET : $source;
+    $active_keys = null === $active_keys ? pfl_get_active_filter_keys() : pfl_sanitize_filter_keys($active_keys);
+    $schema = pfl_get_product_filter_schema();
     $args = [];
 
-    foreach (array_keys(pfl_get_taxonomy_filter_config()) as $key) {
-        $values = pfl_get_filter_values($key, $source);
+    foreach ($active_keys as $key) {
+        if (! isset($schema[$key])) { continue; }
 
-        if (! empty($values)) {
-            $args[$key] = $values;
+        if ('taxonomy' === $schema[$key]['type']) {
+            $values = pfl_get_filter_values($key, $source, $active_keys);
+            if (! empty($values)) { $args[$key] = $values; }
+        } else {
+            $value = pfl_get_filter_value($key, $source, $active_keys);
+            if ($value) { $args[$key] = $value; }
         }
     }
 
-    foreach (array_keys(pfl_get_range_filter_config()) as $key) {
-        $value = pfl_get_filter_value($key, $source);
-
-        if ($value) {
-            $args[$key] = $value;
-        }
-    }
-
-    $sort = pfl_get_filter_value('sort', $source);
-
-    if ($sort) {
-        $args['sort'] = $sort;
-    }
-
+    $sort = pfl_get_filter_value('sort', $source, $active_keys);
+    if ($sort) { $args['sort'] = $sort; }
     return $args;
 }
 
@@ -1125,17 +1636,12 @@ function pfl_get_product_context_url(
 function pfl_build_product_state_url(
     string $base_url,
     array $source,
-    int $paged = 1
+    int $paged = 1,
+    ?array $active_keys = null
 ): string {
-    $args = pfl_get_pagination_filter_args($source);
-
-    if ($paged > 1) {
-        $args['paged'] = $paged;
-    }
-
-    return empty($args)
-        ? $base_url
-        : add_query_arg($args, $base_url);
+    $args = pfl_get_pagination_filter_args($source, $active_keys);
+    if ($paged > 1) { $args['paged'] = $paged; }
+    return empty($args) ? $base_url : add_query_arg($args, $base_url);
 }
 
 
@@ -1145,37 +1651,24 @@ function pfl_build_product_state_url(
 function pfl_get_product_pagination_html(
     WP_Query $query,
     string $base_url,
-    array $source
+    array $source,
+    ?array $active_keys = null
 ): string {
-    $total   = max(1, (int) $query->max_num_pages);
+    $total = max(1, (int) $query->max_num_pages);
     $current = max(1, (int) $query->get('paged'));
 
-    if ($total <= 1) {
-        return '';
-    }
+    if ($total <= 1) { return ''; }
 
     $pages = [];
-
     if ($total <= 7) {
         $pages = range(1, $total);
     } else {
         $pages[] = 1;
-
         $start = max(2, $current - 1);
-        $end   = min($total - 1, $current + 1);
-
-        if ($start > 2) {
-            $pages[] = 'dots';
-        }
-
-        for ($page = $start; $page <= $end; $page++) {
-            $pages[] = $page;
-        }
-
-        if ($end < $total - 1) {
-            $pages[] = 'dots';
-        }
-
+        $end = min($total - 1, $current + 1);
+        if ($start > 2) { $pages[] = 'dots'; }
+        for ($page = $start; $page <= $end; $page++) { $pages[] = $page; }
+        if ($end < $total - 1) { $pages[] = 'dots'; }
         $pages[] = $total;
     }
 
@@ -1184,74 +1677,25 @@ function pfl_get_product_pagination_html(
     <nav class="product-pagination" aria-label="产品分页">
         <ul class="page-numbers">
             <?php if ($current > 1) : ?>
-                <li>
-                    <a
-                        class="page-numbers prev"
-                        href="<?php echo esc_url(
-                            pfl_build_product_state_url(
-                                $base_url,
-                                $source,
-                                $current - 1
-                            )
-                        ); ?>"
-                        data-product-page="<?php echo esc_attr((string) ($current - 1)); ?>"
-                    >
-                        上一页
-                    </a>
-                </li>
+                <li><a class="page-numbers prev" href="<?php echo esc_url(pfl_build_product_state_url($base_url, $source, $current - 1, $active_keys)); ?>" data-product-page="<?php echo esc_attr((string) ($current - 1)); ?>">上一页</a></li>
             <?php endif; ?>
 
             <?php foreach ($pages as $page) : ?>
                 <?php if ('dots' === $page) : ?>
-                    <li>
-                        <span class="page-numbers dots" aria-hidden="true">…</span>
-                    </li>
+                    <li><span class="page-numbers dots" aria-hidden="true">…</span></li>
                 <?php elseif ((int) $page === $current) : ?>
-                    <li>
-                        <span class="page-numbers current" aria-current="page">
-                            <?php echo esc_html((string) $page); ?>
-                        </span>
-                    </li>
+                    <li><span class="page-numbers current" aria-current="page"><?php echo esc_html((string) $page); ?></span></li>
                 <?php else : ?>
-                    <li>
-                        <a
-                            class="page-numbers"
-                            href="<?php echo esc_url(
-                                pfl_build_product_state_url(
-                                    $base_url,
-                                    $source,
-                                    (int) $page
-                                )
-                            ); ?>"
-                            data-product-page="<?php echo esc_attr((string) $page); ?>"
-                        >
-                            <?php echo esc_html((string) $page); ?>
-                        </a>
-                    </li>
+                    <li><a class="page-numbers" href="<?php echo esc_url(pfl_build_product_state_url($base_url, $source, (int) $page, $active_keys)); ?>" data-product-page="<?php echo esc_attr((string) $page); ?>"><?php echo esc_html((string) $page); ?></a></li>
                 <?php endif; ?>
             <?php endforeach; ?>
 
             <?php if ($current < $total) : ?>
-                <li>
-                    <a
-                        class="page-numbers next"
-                        href="<?php echo esc_url(
-                            pfl_build_product_state_url(
-                                $base_url,
-                                $source,
-                                $current + 1
-                            )
-                        ); ?>"
-                        data-product-page="<?php echo esc_attr((string) ($current + 1)); ?>"
-                    >
-                        下一页
-                    </a>
-                </li>
+                <li><a class="page-numbers next" href="<?php echo esc_url(pfl_build_product_state_url($base_url, $source, $current + 1, $active_keys)); ?>" data-product-page="<?php echo esc_attr((string) ($current + 1)); ?>">下一页</a></li>
             <?php endif; ?>
         </ul>
     </nav>
     <?php
-
     return (string) ob_get_clean();
 }
 
@@ -1263,23 +1707,20 @@ function pfl_render_product_results_html(
     WP_Query $query,
     string $context,
     string $base_url,
-    array $source
+    array $source,
+    ?array $active_keys = null
 ): string {
     ob_start();
-
     get_template_part(
         'template-parts/product/results',
         null,
         [
-            'query'    => $query,
-            'context'  => $context,
-            'base_url' => $base_url,
-            'source'   => $source,
+            'query' => $query, 'context' => $context,
+            'base_url' => $base_url, 'source' => $source,
+            'active_keys' => $active_keys,
         ]
     );
-
     wp_reset_postdata();
-
     return (string) ob_get_clean();
 }
 
@@ -1291,107 +1732,66 @@ function pfl_ajax_filter_products(): void
 {
     check_ajax_referer('pfl_filter_products', 'nonce');
 
-    $query_string = isset($_POST['query'])
-        ? (string) wp_unslash($_POST['query'])
-        : '';
-
+    $query_string = isset($_POST['query']) ? (string) wp_unslash($_POST['query']) : '';
     $source = [];
     parse_str($query_string, $source);
 
-    $context = isset($_POST['context'])
-        ? sanitize_key(wp_unslash($_POST['context']))
-        : 'archive';
+    $context = isset($_POST['context']) ? sanitize_key(wp_unslash($_POST['context'])) : 'archive';
+    if (! in_array($context, ['archive', 'taxonomy'], true)) { $context = 'archive'; }
 
-    if (! in_array($context, ['archive', 'taxonomy'], true)) {
-        $context = 'archive';
-    }
-
-    $term_id = isset($_POST['term_id'])
-        ? absint($_POST['term_id'])
-        : 0;
+    $term_id = isset($_POST['term_id']) ? absint($_POST['term_id']) : 0;
+    $term = null;
 
     if ('taxonomy' === $context) {
-        $term = get_term($term_id, 'product_category');
-
-        if (! ($term instanceof WP_Term)) {
+        $candidate = get_term($term_id, 'product_category');
+        if ($candidate instanceof WP_Term) {
+            $term = $candidate;
+        } else {
             $context = 'archive';
             $term_id = 0;
         }
     }
 
-    $paged = isset($_POST['paged'])
-        ? max(1, absint($_POST['paged']))
-        : 1;
-
+    $active_keys = pfl_get_active_filter_keys($term);
+    $paged = isset($_POST['paged']) ? max(1, absint($_POST['paged'])) : 1;
     $query_args = [
-        'post_type'           => 'product',
-        'post_status'         => 'publish',
-        'posts_per_page'      => 9,
-        'paged'               => $paged,
+        'post_type' => 'product', 'post_status' => 'publish',
+        'posts_per_page' => 9, 'paged' => $paged,
         'ignore_sticky_posts' => true,
     ];
 
-    $parts = pfl_get_product_query_parts($source);
+    $parts = pfl_get_product_query_parts($source, $active_keys);
     $tax_query = ['relation' => 'AND'];
 
     if ('taxonomy' === $context && $term_id > 0) {
         $tax_query[] = [
-            'taxonomy'         => 'product_category',
-            'field'            => 'term_id',
-            'terms'            => [$term_id],
-            'include_children' => true,
+            'taxonomy' => 'product_category', 'field' => 'term_id',
+            'terms' => [$term_id], 'include_children' => true,
         ];
     }
 
-    foreach ($parts['tax_clauses'] as $clause) {
-        $tax_query[] = $clause;
-    }
-
-    if (count($tax_query) > 1) {
-        $query_args['tax_query'] = $tax_query;
-    }
+    foreach ($parts['tax_clauses'] as $clause) { $tax_query[] = $clause; }
+    if (count($tax_query) > 1) { $query_args['tax_query'] = $tax_query; }
 
     if (! empty($parts['meta_clauses'])) {
-        $query_args['meta_query'] = array_merge(
-            ['relation' => 'AND'],
-            $parts['meta_clauses']
-        );
+        $query_args['meta_query'] = array_merge(['relation' => 'AND'], $parts['meta_clauses']);
     }
 
-    $query_args = array_merge(
-        $query_args,
-        $parts['sort_args']
-    );
-
+    $query_args = array_merge($query_args, $parts['sort_args']);
     $product_query = new WP_Query($query_args);
     $base_url = pfl_get_product_context_url($context, $term_id);
-    $state_url = pfl_build_product_state_url(
-        $base_url,
-        $source,
-        $paged
-    );
+    $state_url = pfl_build_product_state_url($base_url, $source, $paged, $active_keys);
 
     nocache_headers();
-
-    wp_send_json_success(
-        [
-            'html'          => pfl_render_product_results_html(
-                $product_query,
-                $context,
-                $base_url,
-                $source
-            ),
-            'foundPosts'    => (int) $product_query->found_posts,
-            'maxPages'      => (int) $product_query->max_num_pages,
-            'currentPage'   => $paged,
-            'appliedCount'  => pfl_get_applied_filter_count($source),
-            'url'           => $state_url,
-            'announcement'  => sprintf(
-                '筛选完成，共找到 %d 个产品。',
-                (int) $product_query->found_posts
-            ),
-        ]
-    );
+    wp_send_json_success([
+        'html' => pfl_render_product_results_html($product_query, $context, $base_url, $source, $active_keys),
+        'foundPosts' => (int) $product_query->found_posts,
+        'maxPages' => (int) $product_query->max_num_pages,
+        'currentPage' => $paged,
+        'appliedCount' => pfl_get_applied_filter_count($source, $active_keys),
+        'url' => $state_url,
+        'announcement' => sprintf('筛选完成，共找到 %d 个产品。', (int) $product_query->found_posts),
+    ]);
 }
 add_action('wp_ajax_pfl_filter_products', 'pfl_ajax_filter_products');
 add_action('wp_ajax_nopriv_pfl_filter_products', 'pfl_ajax_filter_products');
@@ -1589,73 +1989,34 @@ add_action('admin_menu', 'pfl_add_demo_data_page');
 
 function pfl_render_demo_data_page(): void
 {
-    if (! current_user_can('manage_options')) {
-        return;
-    }
-
+    if (! current_user_can('manage_options')) { return; }
     $message = '';
 
-    if (
-        isset($_POST['pfl_import_demo'])
-        && check_admin_referer('pfl_import_demo_data')
-    ) {
-        $result  = pfl_import_demo_data();
+    if (isset($_POST['pfl_import_demo']) && check_admin_referer('pfl_import_demo_data')) {
+        $result = pfl_import_demo_data();
         $message = sprintf(
-            '导入完成：创建或更新了 %1$d 个分类项，新增了 %2$d 个产品。',
+            '导入完成：处理了 %1$d 个分类或属性项，创建或更新了 %2$d 个产品，并写入分类专属筛选方案。',
             (int) $result['terms'],
             (int) $result['products']
         );
     }
     ?>
     <div class="wrap">
-        <h1>产品导航筛选实验室：演示数据</h1>
-
-        <?php if ($message) : ?>
-            <div class="notice notice-success is-dismissible">
-                <p><?php echo esc_html($message); ?></p>
-            </div>
-        <?php endif; ?>
-
-        <p>
-            点击下面按钮，将创建多层级产品分类、品牌、电压、功能特点及 12 条演示产品。
-            已存在的同名分类不会重复创建，已有演示产品也不会重复插入。
-        </p>
-
+        <h1>产品导航筛选实验室：v1.3.0 演示数据</h1>
+        <?php if ($message) : ?><div class="notice notice-success is-dismissible"><p><?php echo esc_html($message); ?></p></div><?php endif; ?>
+        <p>点击按钮将补充动态产品属性、数值字段、分类专属筛选方案和演示产品。已有同名产品会被更新，不会重复创建。</p>
         <form method="post">
             <?php wp_nonce_field('pfl_import_demo_data'); ?>
-
-            <p>
-                <button
-                    class="button button-primary button-hero"
-                    name="pfl_import_demo"
-                    type="submit"
-                    value="1"
-                >
-                    一键导入演示数据
-                </button>
-            </p>
+            <p><button class="button button-primary button-hero" name="pfl_import_demo" type="submit" value="1">导入或更新 v1.3.0 演示数据</button></p>
         </form>
-
         <hr>
-
-        <h2>导入后查看</h2>
-        <p>
-            <a
-                class="button"
-                href="<?php echo esc_url(get_post_type_archive_link('product')); ?>"
-                target="_blank"
-            >
-                打开产品归档页
-            </a>
-        </p>
-
-        <h2>学习重点</h2>
+        <h2>建议测试页面</h2>
+        <p><a class="button" href="<?php echo esc_url(get_post_type_archive_link('product')); ?>" target="_blank">打开产品归档页</a></p>
         <ol>
-            <li><code>functions.php</code> 中注册产品类型与分类法。</li>
-            <li><code>pfl_get_category_navigation_levels()</code> 生成逐级导航数据。</li>
-            <li><code>pfl_filter_product_main_query()</code> 修改主查询。</li>
-            <li><code>template-parts/product/filter-form.php</code> 输出 GET 筛选表单。</li>
-            <li><code>taxonomy-product_category.php</code> 组合分类导航、筛选器和主循环。</li>
+            <li>访问“包装设备”，观察包装专属筛选组。</li>
+            <li>访问“真空包装机”，确认其继承“包装设备”方案。</li>
+            <li>访问“输送设备”“电机”“传感器”，比较不同分类的筛选维度。</li>
+            <li>编辑产品分类，切换继承/专属方案并拖动筛选组顺序。</li>
         </ol>
     </div>
     <?php
@@ -1695,258 +2056,126 @@ function pfl_ensure_term(
 
 function pfl_import_demo_data(): array
 {
-    $term_count    = 0;
+    $term_count = 0;
     $product_count = 0;
 
     $industrial = pfl_ensure_term('工业设备', 'product_category');
     $commercial = pfl_ensure_term('商用设备', 'product_category');
-    $parts      = pfl_ensure_term('零部件', 'product_category');
-
+    $parts = pfl_ensure_term('零部件', 'product_category');
     $packaging = pfl_ensure_term('包装设备', 'product_category', $industrial);
     $conveying = pfl_ensure_term('输送设备', 'product_category', $industrial);
-    $cleaning  = pfl_ensure_term('清洗设备', 'product_category', $industrial);
-
+    $cleaning = pfl_ensure_term('清洗设备', 'product_category', $industrial);
     $vacuum = pfl_ensure_term('真空包装机', 'product_category', $packaging);
     $sealer = pfl_ensure_term('自动封口机', 'product_category', $packaging);
     $shrink = pfl_ensure_term('热收缩机', 'product_category', $packaging);
-
     $kitchen = pfl_ensure_term('厨房设备', 'product_category', $commercial);
     $sanitary = pfl_ensure_term('商用清洁设备', 'product_category', $commercial);
-
     $motors = pfl_ensure_term('电机', 'product_category', $parts);
     $sensors = pfl_ensure_term('传感器', 'product_category', $parts);
 
-    $term_ids = array_filter(
-        [
-            $industrial,
-            $commercial,
-            $parts,
-            $packaging,
-            $conveying,
-            $cleaning,
-            $vacuum,
-            $sealer,
-            $shrink,
-            $kitchen,
-            $sanitary,
-            $motors,
-            $sensors,
-        ]
-    );
+    $category_ids = array_filter([$industrial, $commercial, $parts, $packaging, $conveying, $cleaning, $vacuum, $sealer, $shrink, $kitchen, $sanitary, $motors, $sensors]);
+    $term_count += count($category_ids);
 
-    $term_count += count($term_ids);
+    $attribute_terms = [
+        'product_brand' => ['华东机械', '蓝海设备', '启航工业', '新锐科技'],
+        'product_voltage' => ['220V', '380V', '定制电压'],
+        'product_feature' => ['全自动', '触屏控制', '不锈钢机身', '支持定制', '节能型'],
+        'product_material' => ['304不锈钢', '碳钢', '铝合金', '工程塑料'],
+        'product_application' => ['食品加工', '医药制造', '电子制造', '仓储物流', '餐饮服务'],
+        'product_automation' => ['手动', '半自动', '全自动'],
+        'product_installation' => ['固定式', '移动式', '卧式', '立式', '法兰式'],
+        'product_output_type' => ['NPN', 'PNP', '模拟量', '继电器输出'],
+        'product_protection' => ['IP54', 'IP65', 'IP67'],
+        'product_packaging_type' => ['真空包装', '连续封口', '热收缩包装'],
+        'product_conveyor_type' => ['皮带式', '滚筒式', '链板式'],
+        'product_detection_type' => ['光电检测', '接近检测', '压力检测', '温度检测'],
+    ];
 
-    $brand_names = ['华东机械', '蓝海设备', '启航工业', '新锐科技'];
-    $voltage_names = ['220V', '380V', '定制电压'];
-    $feature_names = ['全自动', '触屏控制', '不锈钢机身', '支持定制', '节能型'];
-
-    foreach ($brand_names as $name) {
-        if (pfl_ensure_term($name, 'product_brand')) {
-            $term_count++;
+    foreach ($attribute_terms as $taxonomy => $names) {
+        foreach ($names as $name) {
+            if (pfl_ensure_term($name, $taxonomy)) { $term_count++; }
         }
     }
 
-    foreach ($voltage_names as $name) {
-        if (pfl_ensure_term($name, 'product_voltage')) {
-            $term_count++;
-        }
-    }
+    $profiles = [
+        $industrial => ['brand', 'voltage', 'application', 'material', 'price_range', 'power_range'],
+        $commercial => ['brand', 'voltage', 'application', 'material', 'automation', 'price_range', 'power_range'],
+        $packaging => ['brand', 'voltage', 'automation', 'packaging_type', 'material', 'feature', 'price_range', 'power_range'],
+        $conveying => ['brand', 'voltage', 'conveyor_type', 'installation', 'material', 'width_range', 'speed_range', 'power_range', 'price_range'],
+        $motors => ['brand', 'voltage', 'installation', 'protection', 'power_range', 'rpm_range', 'price_range'],
+        $sensors => ['brand', 'voltage', 'detection_type', 'output_type', 'protection', 'distance_range', 'price_range'],
+    ];
 
-    foreach ($feature_names as $name) {
-        if (pfl_ensure_term($name, 'product_feature')) {
-            $term_count++;
+    foreach ($category_ids as $category_id) {
+        if (isset($profiles[$category_id])) {
+            update_term_meta($category_id, 'pfl_filter_mode', 'custom');
+            update_term_meta($category_id, 'pfl_filter_groups', $profiles[$category_id]);
+        } else {
+            update_term_meta($category_id, 'pfl_filter_mode', 'inherit');
         }
     }
 
     $products = [
-        [
-            'title'    => '双室真空包装机',
-            'category' => $vacuum,
-            'brand'    => '华东机械',
-            'voltage'  => '380V',
-            'features' => ['全自动', '触屏控制', '不锈钢机身'],
-            'model'    => 'VP-600D',
-            'price'    => 46800,
-            'power'    => 5.5,
-        ],
-        [
-            'title'    => '台式真空包装机',
-            'category' => $vacuum,
-            'brand'    => '蓝海设备',
-            'voltage'  => '220V',
-            'features' => ['节能型', '不锈钢机身'],
-            'model'    => 'VP-320',
-            'price'    => 8800,
-            'power'    => 1.2,
-        ],
-        [
-            'title'    => '连续式真空包装机',
-            'category' => $vacuum,
-            'brand'    => '启航工业',
-            'voltage'  => '380V',
-            'features' => ['全自动', '触屏控制', '支持定制'],
-            'model'    => 'VP-1000C',
-            'price'    => 69800,
-            'power'    => 11,
-        ],
-        [
-            'title'    => '自动连续封口机',
-            'category' => $sealer,
-            'brand'    => '新锐科技',
-            'voltage'  => '220V',
-            'features' => ['全自动', '节能型'],
-            'model'    => 'FS-980',
-            'price'    => 12800,
-            'power'    => 2.2,
-        ],
-        [
-            'title'    => '重型自动封口机',
-            'category' => $sealer,
-            'brand'    => '华东机械',
-            'voltage'  => '380V',
-            'features' => ['触屏控制', '支持定制'],
-            'model'    => 'FS-1500',
-            'price'    => 35800,
-            'power'    => 6.5,
-        ],
-        [
-            'title'    => '热收缩包装机',
-            'category' => $shrink,
-            'brand'    => '蓝海设备',
-            'voltage'  => '380V',
-            'features' => ['全自动', '不锈钢机身'],
-            'model'    => 'BS-4525',
-            'price'    => 28600,
-            'power'    => 9.5,
-        ],
-        [
-            'title'    => '皮带输送机',
-            'category' => $conveying,
-            'brand'    => '启航工业',
-            'voltage'  => '380V',
-            'features' => ['支持定制', '节能型'],
-            'model'    => 'CV-800',
-            'price'    => 19800,
-            'power'    => 4,
-        ],
-        [
-            'title'    => '滚筒输送机',
-            'category' => $conveying,
-            'brand'    => '华东机械',
-            'voltage'  => '定制电压',
-            'features' => ['支持定制'],
-            'model'    => 'RC-1200',
-            'price'    => 23800,
-            'power'    => 3.5,
-        ],
-        [
-            'title'    => '工业高压清洗机',
-            'category' => $cleaning,
-            'brand'    => '新锐科技',
-            'voltage'  => '380V',
-            'features' => ['节能型', '不锈钢机身'],
-            'model'    => 'CL-500',
-            'price'    => 32800,
-            'power'    => 7.5,
-        ],
-        [
-            'title'    => '商用洗碗机',
-            'category' => $kitchen,
-            'brand'    => '蓝海设备',
-            'voltage'  => '380V',
-            'features' => ['全自动', '触屏控制', '节能型'],
-            'model'    => 'DW-860',
-            'price'    => 52800,
-            'power'    => 12,
-        ],
-        [
-            'title'    => '工业伺服电机',
-            'category' => $motors,
-            'brand'    => '启航工业',
-            'voltage'  => '220V',
-            'features' => ['节能型'],
-            'model'    => 'SM-3K',
-            'price'    => 6800,
-            'power'    => 3,
-        ],
-        [
-            'title'    => '智能光电传感器',
-            'category' => $sensors,
-            'brand'    => '新锐科技',
-            'voltage'  => '定制电压',
-            'features' => ['支持定制'],
-            'model'    => 'PS-220',
-            'price'    => 2600,
-            'power'    => 0.2,
-        ],
+        ['title'=>'双室真空包装机','category'=>$vacuum,'model'=>'VP-600D','price'=>46800,'power'=>5.5,'width'=>720,'speed'=>12,'tax'=>['product_brand'=>['华东机械'],'product_voltage'=>['380V'],'product_feature'=>['全自动','触屏控制','不锈钢机身'],'product_material'=>['304不锈钢'],'product_application'=>['食品加工'],'product_automation'=>['全自动'],'product_packaging_type'=>['真空包装']]],
+        ['title'=>'台式真空包装机','category'=>$vacuum,'model'=>'VP-320','price'=>8800,'power'=>1.2,'width'=>380,'speed'=>6,'tax'=>['product_brand'=>['蓝海设备'],'product_voltage'=>['220V'],'product_feature'=>['节能型','不锈钢机身'],'product_material'=>['304不锈钢'],'product_application'=>['食品加工'],'product_automation'=>['手动'],'product_packaging_type'=>['真空包装']]],
+        ['title'=>'连续式真空包装机','category'=>$vacuum,'model'=>'VP-1000C','price'=>69800,'power'=>11,'width'=>1050,'speed'=>35,'tax'=>['product_brand'=>['启航工业'],'product_voltage'=>['380V'],'product_feature'=>['全自动','触屏控制','支持定制'],'product_material'=>['304不锈钢'],'product_application'=>['食品加工','医药制造'],'product_automation'=>['全自动'],'product_packaging_type'=>['真空包装']]],
+        ['title'=>'自动连续封口机','category'=>$sealer,'model'=>'FS-980','price'=>12800,'power'=>2.2,'width'=>520,'speed'=>18,'tax'=>['product_brand'=>['新锐科技'],'product_voltage'=>['220V'],'product_feature'=>['全自动','节能型'],'product_material'=>['铝合金'],'product_application'=>['食品加工'],'product_automation'=>['全自动'],'product_packaging_type'=>['连续封口']]],
+        ['title'=>'重型自动封口机','category'=>$sealer,'model'=>'FS-1500','price'=>35800,'power'=>6.5,'width'=>880,'speed'=>28,'tax'=>['product_brand'=>['华东机械'],'product_voltage'=>['380V'],'product_feature'=>['触屏控制','支持定制'],'product_material'=>['碳钢'],'product_application'=>['仓储物流'],'product_automation'=>['全自动'],'product_packaging_type'=>['连续封口']]],
+        ['title'=>'热收缩包装机','category'=>$shrink,'model'=>'BS-4525','price'=>28600,'power'=>9.5,'width'=>760,'speed'=>22,'tax'=>['product_brand'=>['蓝海设备'],'product_voltage'=>['380V'],'product_feature'=>['全自动','不锈钢机身'],'product_material'=>['304不锈钢'],'product_application'=>['食品加工'],'product_automation'=>['全自动'],'product_packaging_type'=>['热收缩包装']]],
+        ['title'=>'皮带输送机','category'=>$conveying,'model'=>'CV-800','price'=>19800,'power'=>4,'width'=>800,'speed'=>25,'tax'=>['product_brand'=>['启航工业'],'product_voltage'=>['380V'],'product_feature'=>['支持定制','节能型'],'product_material'=>['碳钢'],'product_application'=>['仓储物流'],'product_installation'=>['固定式'],'product_conveyor_type'=>['皮带式']]],
+        ['title'=>'滚筒输送机','category'=>$conveying,'model'=>'RC-1200','price'=>23800,'power'=>3.5,'width'=>1200,'speed'=>15,'tax'=>['product_brand'=>['华东机械'],'product_voltage'=>['定制电压'],'product_feature'=>['支持定制'],'product_material'=>['碳钢'],'product_application'=>['仓储物流'],'product_installation'=>['固定式'],'product_conveyor_type'=>['滚筒式']]],
+        ['title'=>'移动链板输送机','category'=>$conveying,'model'=>'LC-650','price'=>31800,'power'=>5,'width'=>650,'speed'=>32,'tax'=>['product_brand'=>['新锐科技'],'product_voltage'=>['380V'],'product_feature'=>['支持定制'],'product_material'=>['304不锈钢'],'product_application'=>['食品加工'],'product_installation'=>['移动式'],'product_conveyor_type'=>['链板式']]],
+        ['title'=>'工业高压清洗机','category'=>$cleaning,'model'=>'CL-500','price'=>32800,'power'=>7.5,'tax'=>['product_brand'=>['新锐科技'],'product_voltage'=>['380V'],'product_feature'=>['节能型','不锈钢机身'],'product_material'=>['304不锈钢'],'product_application'=>['食品加工'],'product_automation'=>['半自动']]],
+        ['title'=>'商用洗碗机','category'=>$kitchen,'model'=>'DW-860','price'=>52800,'power'=>12,'tax'=>['product_brand'=>['蓝海设备'],'product_voltage'=>['380V'],'product_feature'=>['全自动','触屏控制','节能型'],'product_material'=>['304不锈钢'],'product_application'=>['餐饮服务'],'product_automation'=>['全自动']]],
+        ['title'=>'工业伺服电机','category'=>$motors,'model'=>'SM-3K','price'=>6800,'power'=>3,'rpm'=>1450,'tax'=>['product_brand'=>['启航工业'],'product_voltage'=>['220V'],'product_feature'=>['节能型'],'product_application'=>['电子制造'],'product_installation'=>['法兰式'],'product_protection'=>['IP65']]],
+        ['title'=>'立式防水电机','category'=>$motors,'model'=>'VM-7K','price'=>12600,'power'=>7.5,'rpm'=>2900,'tax'=>['product_brand'=>['华东机械'],'product_voltage'=>['380V'],'product_feature'=>['节能型'],'product_application'=>['食品加工'],'product_installation'=>['立式'],'product_protection'=>['IP67']]],
+        ['title'=>'智能光电传感器','category'=>$sensors,'model'=>'PS-220','price'=>2600,'power'=>0.2,'distance'=>120,'tax'=>['product_brand'=>['新锐科技'],'product_voltage'=>['定制电压'],'product_feature'=>['支持定制'],'product_application'=>['电子制造'],'product_detection_type'=>['光电检测'],'product_output_type'=>['NPN','PNP'],'product_protection'=>['IP67']]],
+        ['title'=>'工业接近传感器','category'=>$sensors,'model'=>'NS-50','price'=>980,'power'=>0.1,'distance'=>35,'tax'=>['product_brand'=>['蓝海设备'],'product_voltage'=>['定制电压'],'product_application'=>['电子制造'],'product_detection_type'=>['接近检测'],'product_output_type'=>['PNP'],'product_protection'=>['IP65']]],
+        ['title'=>'模拟量压力传感器','category'=>$sensors,'model'=>'PT-300','price'=>4200,'power'=>0.3,'distance'=>260,'tax'=>['product_brand'=>['启航工业'],'product_voltage'=>['220V'],'product_application'=>['医药制造'],'product_detection_type'=>['压力检测'],'product_output_type'=>['模拟量'],'product_protection'=>['IP67']]],
     ];
 
     foreach ($products as $item) {
-        $existing = get_page_by_title(
-            $item['title'],
-            OBJECT,
-            'product'
-        );
+        $existing = get_page_by_title($item['title'], OBJECT, 'product');
+        $post_id = $existing instanceof WP_Post ? (int) $existing->ID : 0;
 
-        if ($existing instanceof WP_Post) {
-            continue;
+        if (! $post_id) {
+            $created = wp_insert_post([
+                'post_type'=>'product','post_status'=>'publish','post_title'=>$item['title'],
+                'post_excerpt'=>'用于演示动态分类属性与 AJAX 多条件筛选的示例产品。',
+                'post_content'=>'<p>该产品用于学习分类专属筛选方案、属性继承、taxonomy 与数值范围查询。</p>',
+            ], true);
+            if (is_wp_error($created)) { continue; }
+            $post_id = (int) $created;
         }
 
-        $post_id = wp_insert_post(
-            [
-                'post_type'    => 'product',
-                'post_status'  => 'publish',
-                'post_title'   => $item['title'],
-                'post_excerpt' => '用于演示层级分类导航与多条件筛选的示例产品。',
-                'post_content' => sprintf(
-                    '<p>%1$s 是本主题自动创建的演示产品。你可以在后台修改其分类、品牌、电压、功能、价格和功率，然后观察前台筛选结果如何变化。</p>',
-                    esc_html($item['title'])
-                ),
-            ],
-            true
-        );
+        wp_set_object_terms($post_id, [(int) $item['category']], 'product_category');
 
-        if (is_wp_error($post_id)) {
-            continue;
+        foreach ($attribute_terms as $taxonomy => $unused) {
+            wp_set_object_terms($post_id, $item['tax'][$taxonomy] ?? [], $taxonomy, false);
         }
-
-        wp_set_object_terms(
-            $post_id,
-            [(int) $item['category']],
-            'product_category'
-        );
-
-        wp_set_object_terms(
-            $post_id,
-            [$item['brand']],
-            'product_brand'
-        );
-
-        wp_set_object_terms(
-            $post_id,
-            [$item['voltage']],
-            'product_voltage'
-        );
-
-        wp_set_object_terms(
-            $post_id,
-            $item['features'],
-            'product_feature'
-        );
 
         update_post_meta($post_id, 'product_model', $item['model']);
         update_post_meta($post_id, 'product_price', $item['price']);
         update_post_meta($post_id, 'product_power', $item['power']);
 
+        $numeric_map = [
+            'rpm' => 'product_rpm', 'width' => 'product_width',
+            'distance' => 'product_detection_distance', 'speed' => 'product_speed',
+        ];
+
+        foreach ($numeric_map as $item_key => $meta_key) {
+            if (isset($item[$item_key])) {
+                update_post_meta($post_id, $meta_key, (float) $item[$item_key]);
+            } else {
+                delete_post_meta($post_id, $meta_key);
+            }
+        }
+
         $product_count++;
     }
 
     flush_rewrite_rules(false);
-
-    return [
-        'terms'    => $term_count,
-        'products' => $product_count,
-    ];
+    return ['terms' => $term_count, 'products' => $product_count];
 }
 
 

@@ -17,7 +17,11 @@ $reset_url = isset($args['base_url'])
     ? (string) $args['base_url']
     : pfl_get_product_filter_action();
 
-$has_filters = pfl_has_active_product_filters($source);
+$active_keys = isset($args['active_keys']) && is_array($args['active_keys'])
+    ? pfl_sanitize_filter_keys($args['active_keys'])
+    : pfl_get_active_filter_keys();
+
+$has_filters = pfl_has_active_product_filters($source, $active_keys);
 $archive_url = get_post_type_archive_link('product');
 ?>
 

@@ -9,10 +9,10 @@ $product_archive = get_post_type_archive_link('product');
 ?>
 
 <section class="hero">
-    <h1>用一个主题掌握产品分类导航与多条件筛选</h1>
+    <h1>用一个主题掌握动态产品属性与分类专属筛选</h1>
 
     <p>
-        本主题把自定义文章类型、层级分类法、产品属性、GET 筛选、
+        本主题把自定义文章类型、层级分类法、动态产品属性、分类继承、GET 筛选、
         AJAX 无刷新更新、History API、pre_get_posts、tax_query、meta_query、
         参数验证、后台管理列和分页状态连接成一个完整示例。
     </p>
@@ -54,10 +54,10 @@ $product_archive = get_post_type_archive_link('product');
         </article>
 
         <article class="learning-card">
-            <h3>3. 主查询修改</h3>
+            <h3>3. 配置驱动查询</h3>
             <p>
                 查看 pre_get_posts 中的 pfl_filter_product_main_query()，
-                理解为什么分类模板不需要重新写 WP_Query。
+                理解一份筛选 Schema 如何同时驱动表单、验证、GET、AJAX 与 WP_Query。
             </p>
         </article>
 
