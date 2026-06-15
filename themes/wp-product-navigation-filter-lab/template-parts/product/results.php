@@ -49,8 +49,20 @@ $summary      = 'taxonomy' === $context
     data-current-page="<?php echo esc_attr((string) $current_page); ?>"
 >
     <div class="product-results__loading" aria-hidden="true">
-        <span class="product-results__spinner"></span>
-        <span>正在更新产品结果</span>
+        <div class="product-results__loading-heading">
+            <span class="product-results__spinner"></span>
+            <span>正在更新产品结果</span>
+        </div>
+        <div class="product-results__skeleton-grid">
+            <?php for ($skeleton_index = 0; $skeleton_index < 6; $skeleton_index++) : ?>
+                <span class="product-result-skeleton">
+                    <i class="product-result-skeleton__image"></i>
+                    <i class="product-result-skeleton__line is-wide"></i>
+                    <i class="product-result-skeleton__line"></i>
+                    <i class="product-result-skeleton__line is-short"></i>
+                </span>
+            <?php endfor; ?>
+        </div>
     </div>
 
     <div class="product-results__header">

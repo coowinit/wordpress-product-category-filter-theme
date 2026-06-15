@@ -11,7 +11,8 @@
  * 6. 分类专属筛选、继承、历史记录与分页状态同步
  * 7. 产品分类内容、Canonical、Robots 与结构化数据
  * 8. 联动筛选计数、不可用选项与缓存失效机制
- * 9. 演示数据导入器
+ * 9. 筛选抽屉、折叠、搜索与前端界面状态
+ * 10. 演示数据导入器
  */
 
 if (! defined('ABSPATH')) {
@@ -98,6 +99,8 @@ function pfl_enqueue_assets(): void
                 'action'   => 'pfl_filter_products',
                 'nonce'    => wp_create_nonce('pfl_filter_products'),
                 'debounce' => 320,
+                'uiBreakpoint' => 820,
+                'storagePrefix' => 'pfl_filter_ui_',
                 'showPerformance' => (
                     current_user_can('manage_options')
                     && defined('WP_DEBUG')
@@ -105,7 +108,8 @@ function pfl_enqueue_assets(): void
                 ),
                 'messages' => [
                     'loading' => '正在更新产品结果与筛选计数……',
-                    'error'   => 'AJAX 请求失败，正在切换为普通页面请求。',
+                    'retrying' => '请求失败，正在自动重试……',
+                    'error'   => 'AJAX 请求仍未成功，可重试或使用普通页面打开。',
                 ],
             ]
         );
@@ -539,6 +543,45 @@ function pfl_get_product_filter_schema(): array
             ],
         ],
     ];
+}
+
+
+/**
+ * v1.6.0 筛选组界面配置。
+ *
+ * 查询规则仍由 pfl_get_product_filter_schema() 管理；本函数只负责
+ * 展开状态、首屏显示数量和组内搜索等前端表现，避免将业务查询与 UI 混在一起。
+ */
+function pfl_get_filter_ui_config(string $key, array $filter = []): array
+{
+    $is_taxonomy = 'taxonomy' === ($filter['type'] ?? '');
+
+    $config = [
+        'initial_limit'   => $is_taxonomy ? 3 : 99,
+        'searchable'      => $is_taxonomy,
+        'search_threshold'=> 4,
+        'default_open'    => in_array($key, ['brand', 'voltage'], true),
+    ];
+
+    $overrides = [
+        'brand'       => ['initial_limit' => 3, 'searchable' => true, 'search_threshold' => 4, 'default_open' => true],
+        'application' => ['initial_limit' => 3, 'searchable' => true, 'search_threshold' => 4],
+        'feature'     => ['initial_limit' => 4, 'searchable' => true, 'search_threshold' => 5],
+        'material'    => ['initial_limit' => 3, 'searchable' => true, 'search_threshold' => 4],
+    ];
+
+    if (isset($overrides[$key])) {
+        $config = array_merge($config, $overrides[$key]);
+    }
+
+    /**
+     * 允许子主题或插件调整筛选组 UI 配置。
+     *
+     * @param array  $config 当前配置。
+     * @param string $key    Schema 键。
+     * @param array  $filter Schema 定义。
+     */
+    return apply_filters('pfl_filter_ui_config', $config, $key, $filter);
 }
 
 function pfl_get_taxonomy_filter_config(): array
